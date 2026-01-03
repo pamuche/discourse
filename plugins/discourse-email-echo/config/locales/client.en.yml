@@ -1,0 +1,7 @@
+en:
+  site_settings:
+    email_echo_enabled: "Enable email echo functionality (mailing list mode for own posts)"
+  
+  js:
+    user:
+      email_echo_enabled: "Receive email notifications for my own posts and topics (mailing list echo)"

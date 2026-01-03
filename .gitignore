@@ -73,6 +73,7 @@
 !/plugins/discourse-ai
 !/plugins/discourse-cakeday
 !/plugins/discourse-rewind
+!/plugins/discourse-email-echo
 /plugins/*/auto_generated
 
 /spec/fixtures/plugins/my_plugin/auto_generated
