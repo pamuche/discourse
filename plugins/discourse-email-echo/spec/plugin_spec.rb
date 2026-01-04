@@ -35,14 +35,13 @@ RSpec.describe "DiscourseEmailEcho" do
       end
 
       context "when user is a bot" do
-        fab!(:bot_user) { Fabricate(:user, id: -1) }
-        fab!(:bot_topic) { Fabricate(:topic, user: bot_user) }
-        fab!(:bot_post) { Fabricate(:post, topic: bot_topic, user: bot_user) }
-
-        before { bot_user.user_option.update!(email_echo_enabled: true) }
+        before do
+          allow(user).to receive(:bot?).and_return(true)
+          user.user_option.update!(email_echo_enabled: true)
+        end
 
         it "prevents bot from receiving notifications even with email echo enabled" do
-          expect(post_alerter.not_allowed?(bot_user, bot_post)).to eq(true)
+          expect(post_alerter.not_allowed?(user, post)).to eq(true)
         end
       end
     end
