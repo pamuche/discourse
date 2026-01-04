@@ -1,4 +1,0 @@
-plugins:
-  email_echo_enabled:
-    default: true
-    client: true
