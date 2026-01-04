@@ -97,7 +97,7 @@ When a user has `email_echo_enabled = false` (default):
 - Standard Discourse behavior: users don't receive notifications for their own posts
 
 ### Security Considerations
-- Bots (user_id < 0) are never allowed notifications, even with email echo enabled
+- Bots (identified by `user.bot?` method) are never allowed notifications, even with email echo enabled
 - The feature respects all existing notification permissions and privacy settings
 - Each user controls their own echo setting - it's not admin-controlled per user
 
