@@ -46,14 +46,14 @@ class PostDestroyer
       .find_each { |post| PostDestroyer.new(Discourse.system_user, post, context: context).destroy }
   end
 
-  def self.delete_with_replies(performed_by, post, reviewable = nil, defer_reply_flags: true)
+  def self.delete_with_replies(performed_by, post, reviewable_id = nil, defer_reply_flags: true)
     reply_ids = post.reply_ids(Guardian.new(performed_by), only_replies_to_single_post: false)
     replies = Post.where(id: reply_ids.map { |r| r[:id] })
-    PostDestroyer.new(performed_by, post, reviewable: reviewable).destroy
+    PostDestroyer.new(performed_by, post, reviewable_id: reviewable_id).destroy
 
     options = { defer_flags: defer_reply_flags }
     if SiteSetting.notify_users_after_responses_deleted_on_flagged_post
-      options.merge!({ reviewable: reviewable, notify_responders: true, parent_post: post })
+      options.merge!({ reviewable_id: reviewable_id, notify_responders: true, parent_post: post })
     end
     replies.each { |reply| PostDestroyer.new(performed_by, reply, options).destroy }
   end
@@ -83,6 +83,8 @@ class PostDestroyer
     elsif @user.id == @post.user_id
       mark_for_deletion(delete_removed_posts_after)
     end
+
+    resolve_reviewables_for_author_deletion if @user.id == @post.user_id
 
     UserActionManager.post_destroyed(@post)
 
@@ -121,10 +123,9 @@ class PostDestroyer
 
     @topic.update_column(:user_id, Discourse::SYSTEM_USER_ID) if !@topic.user_id
     @topic.recover!(@user) if @post.is_first_post?
-    @topic.update_statistics
+    @topic.update_statistics!
     Topic.publish_stats_to_clients!(@topic.id, :recovered)
 
-    @topic.reload
     @topic.reset_bumped_at(@post) if @post.is_last_reply? && !@post.whisper?
 
     UserActionManager.post_created(@post)
@@ -135,6 +136,7 @@ class PostDestroyer
     if @post.is_first_post?
       UserActionManager.topic_created(@topic)
       DiscourseEvent.trigger(:topic_recovered, @topic, @user)
+
       if @user.id != @post.user_id
         StaffActionLogger.new(@user).log_topic_delete_recover(
           @topic,
@@ -142,10 +144,12 @@ class PostDestroyer
           @opts.slice(:context),
         )
       end
-      update_imap_sync(@post, false)
+
       if SiteSetting.tos_topic_id == @topic.id || SiteSetting.privacy_topic_id == @topic.id
         Discourse.clear_urls!
       end
+    else
+      StaffActionLogger.new(@user).log_post_recover(@post) if @user.id != @post.user_id
     end
   end
 
@@ -205,16 +209,18 @@ class PostDestroyer
       remove_associated_notifications
 
       if @user.id != @post.user_id && !@opts[:skip_staff_log]
+        logger = StaffActionLogger.new(@user)
+
         if @post.topic && @post.is_first_post?
-          StaffActionLogger.new(@user).log_topic_delete_recover(
+          logger.log_topic_delete_recover(
             @post.topic,
             permanent? ? "delete_topic_permanently" : "delete_topic",
-            @opts.slice(:context),
+            @opts.slice(:context, :reviewable_id),
           )
         else
-          StaffActionLogger.new(@user).log_post_deletion(
+          logger.log_post_deletion(
             @post,
-            **@opts.slice(:context),
+            **@opts.slice(:context, :reviewable_id),
             permanent: permanent?,
           )
         end
@@ -240,22 +246,10 @@ class PostDestroyer
       DB.after_commit do
         Topic.reset_highest(@post.topic_id)
 
-        if @opts[:reviewable]
-          notify_deletion(
-            @opts[:reviewable],
-            { notify_responders: @opts[:notify_responders], parent_post: @opts[:parent_post] },
-          )
-          if @post.reviewable_flag &&
-               SiteSetting.notify_users_after_responses_deleted_on_flagged_post
-            ignore(@post.reviewable_flag)
-          end
-        elsif reviewable = @post.reviewable_flag
-          @opts[:defer_flags] ? ignore(reviewable) : agree(reviewable)
-        end
+        handle_reviewable_after_deletion
       end
     end
 
-    update_imap_sync(@post, true) if @post.topic&.deleted_at
     feature_users_in_the_topic if @post.topic
     @post.publish_change_to_clients!(permanent? ? :destroyed : :deleted) if @post.topic
     if @post.topic && @post.post_number == 1
@@ -292,7 +286,6 @@ class PostDestroyer
         @post.update_column(:user_deleted, true)
         @post.topic_links.each(&:destroy)
         @post.topic.update_column(:closed, true) if @post.is_first_post?
-        resolve_reviewables_for_author_deletion
       end
     end
   end
@@ -341,7 +334,7 @@ class PostDestroyer
         .select(:created_at, :user_id, :post_number)
         .where("topic_id = ? and id <> ?", @post.topic_id, @post.id)
         .where.not(user_id: nil)
-        .where.not(post_type: Post.types[:whisper])
+        .where.not(post_type: [Post.types[:whisper], Post.types[:small_action]])
         .order("created_at desc")
         .first
 
@@ -400,6 +393,37 @@ class PostDestroyer
   def ignore(reviewable)
     reviewable.perform_ignore_and_do_nothing(@user, post_was_deleted: true)
     reviewable.transition_to(:ignored, @user)
+  end
+
+  def handle_reviewable_after_deletion
+    if @opts[:reviewable_id]
+      handle_explicit_reviewable
+    elsif @post.reviewable_flag
+      handle_post_reviewable_flag
+    end
+  end
+
+  def handle_explicit_reviewable
+    reviewable = Reviewable.find_by(id: @opts[:reviewable_id])
+    return unless reviewable
+
+    notify_deletion(
+      reviewable,
+      { notify_responders: @opts[:notify_responders], parent_post: @opts[:parent_post] },
+    )
+
+    return unless @post.reviewable_flag
+    return unless SiteSetting.notify_users_after_responses_deleted_on_flagged_post
+    return if @post.reviewable_flag.potentially_illegal?
+
+    ignore(@post.reviewable_flag)
+  end
+
+  def handle_post_reviewable_flag
+    return ignore(@post.reviewable_flag) if @opts[:defer_flags]
+    return if @post.reviewable_flag.potentially_illegal?
+
+    agree(@post.reviewable_flag)
   end
 
   def notify_deletion(reviewable, options = {})
@@ -508,13 +532,6 @@ class PostDestroyer
     end
   end
 
-  def update_imap_sync(post, sync)
-    return if !SiteSetting.enable_imap
-    incoming = IncomingEmail.find_by(post_id: post.id, topic_id: post.topic_id)
-    return if !incoming || !incoming.imap_uid
-    incoming.update(imap_sync: sync)
-  end
-
   def update_post_counts(operator)
     counts =
       Post
@@ -545,14 +562,26 @@ class PostDestroyer
   def resolve_reviewables_for_author_deletion
     reviewables = Reviewable.where(target: @post, status: Reviewable.statuses[:pending])
 
-    reviewables.each do |reviewable|
-      reviewable.reviewable_notes.create!(
-        user: Discourse.system_user,
-        content: I18n.t("reviewables.post_deleted_by_author"),
-      )
+    if user_penalized_for_post?
+      reviewables.find_each do |reviewable|
+        note = I18n.t("reviewables.post_deleted_by_author_after_penalty")
+        next if reviewable.reviewable_notes.exists?(user: Discourse.system_user, content: note)
 
-      reviewable.transition_to(:ignored, Discourse.system_user)
+        reviewable.reviewable_notes.create!(user: Discourse.system_user, content: note)
+      end
+      return
     end
+
+    reviewables.find_each { |reviewable| reviewable.transition_to(:ignored, Discourse.system_user) }
+  end
+
+  def user_penalized_for_post?
+    return false unless @post.user.silenced? || @post.user.suspended?
+
+    UserHistory.exists?(
+      action: [UserHistory.actions[:silence_user], UserHistory.actions[:suspend_user]],
+      post: @post,
+    )
   end
 
   def restore_reviewables_for_author_recovery

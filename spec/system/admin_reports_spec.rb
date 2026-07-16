@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
-describe "Admin Reports", type: :system do
+describe "Admin Reports" do
   fab!(:current_user, :admin)
+
+  let(:reports_page) { PageObjects::Pages::AdminReport.new }
+
   before { sign_in(current_user) }
 
   context "when use_legacy_pageviews is true" do
@@ -20,5 +23,52 @@ describe "Admin Reports", type: :system do
       visit "/admin/reports/site_traffic"
       expect(page).to have_current_path("/admin/reports/site_traffic")
     end
+  end
+
+  it "groups reports under headings, hides legacy reports from the index, and warns on direct access" do
+    visit "/admin/reports"
+
+    within(".admin-reports-group", text: "Engagement") do
+      expect(page).to have_css(
+        ".admin-section-landing-item__title",
+        text: I18n.t("reports.signups.title"),
+      )
+    end
+    expect(page).to have_css(".admin-reports-group__title", text: "Traffic")
+    expect(page).to have_no_css(
+      ".admin-section-landing-item__title",
+      text: I18n.t("reports.bookmarks.title"),
+    )
+
+    visit "/admin/reports/bookmarks"
+
+    expect(page).to have_css(".admin-report")
+    expect(page).to have_css(
+      ".alert.alert-info",
+      text: I18n.t("admin_js.admin.reports.legacy_warning"),
+    )
+  end
+
+  it "lets admins filter report groups from URLs and controls" do
+    reports_page.visit_index(group: "engagement")
+
+    expect(reports_page).to have_current_reports_path(group: "engagement")
+    expect(reports_page.filter_controls).to have_dropdown_value("Engagement")
+    expect(reports_page).to have_group("Engagement")
+    expect(reports_page).to have_no_group("Traffic")
+
+    reports_page.filter_controls.select_dropdown_option("Traffic")
+
+    expect(reports_page).to have_current_reports_path(group: "traffic")
+    expect(reports_page.filter_controls).to have_dropdown_value("Traffic")
+    expect(reports_page).to have_group("Traffic")
+    expect(reports_page).to have_no_group("Engagement")
+
+    reports_page.filter_controls.select_all_dropdown_option
+
+    expect(reports_page).to have_current_all_reports_path
+    expect(reports_page.filter_controls).to have_dropdown_value("All groups")
+    expect(reports_page).to have_group("Engagement")
+    expect(reports_page).to have_group("Traffic")
   end
 end

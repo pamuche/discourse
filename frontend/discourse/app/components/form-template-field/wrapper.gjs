@@ -4,9 +4,10 @@ import { action, get } from "@ember/object";
 import didUpdate from "@ember/render-modifiers/modifiers/did-update";
 import { next } from "@ember/runloop";
 import { service } from "@ember/service";
-import Yaml from "js-yaml";
+import { waitForPromise } from "@ember/test-waiters";
 import FormTemplate from "discourse/models/form-template";
 import CheckboxField from "./checkbox";
+import ComposerField from "./composer";
 import DropdownField from "./dropdown";
 import InputField from "./input";
 import MultiSelectField from "./multi-select";
@@ -22,6 +23,7 @@ const FormTemplateField = <template>
     @validations={{@content.validations}}
     @value={{@initialValue}}
     @onChange={{@onChange}}
+    @uppyComposerUpload={{@uppyComposerUpload}}
   />
 </template>;
 
@@ -42,6 +44,7 @@ export default class FormTemplateFieldWrapper extends Component {
     textarea: TextareaField,
     "tag-chooser": TagChooserField,
     upload: UploadField,
+    composer: ComposerField,
   };
 
   constructor() {
@@ -63,8 +66,11 @@ export default class FormTemplateFieldWrapper extends Component {
     });
   }
 
-  _loadTemplate(templateContent) {
+  async _loadTemplate(templateContent) {
     try {
+      const promise = import("js-yaml");
+      waitForPromise(promise);
+      const Yaml = (await promise).default;
       this.parsedTemplate = Yaml.load(templateContent);
       this.args.onSelectFormTemplate?.(this.parsedTemplate);
     } catch (e) {
@@ -104,6 +110,7 @@ export default class FormTemplateFieldWrapper extends Component {
             @content={{content}}
             @initialValue={{get this.initialValues content.id}}
             @onChange={{this.onChange}}
+            @uppyComposerUpload={{@uppyComposerUpload}}
           />
         {{/each}}
       </div>

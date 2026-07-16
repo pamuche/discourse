@@ -3,6 +3,12 @@
   .setting {
     padding-bottom: 20px;
 
+    &.icon {
+      .setting-value .multi-select .formatted-selection {
+        display: none;
+      }
+    }
+
     .setting-label {
       float: left;
       width: 17.6576%;
@@ -57,23 +63,33 @@
         }
       }
 
-      .image-uploader {
-        display: flex;
-        flex-direction: column;
-
-        .image-upload-controls {
-          display: flex;
-          gap: 0.5em;
-          margin: 0 0 0.5em;
-        }
-      }
-
-      .uploaded-image-preview {
-        background-color: var(--primary-medium);
+      label a {
+        margin: 0;
       }
     }
 
-    .setting-theme-warning {
+    .inline-dependent-settings {
+      margin-top: var(--space-3);
+
+      .setting.inline-dependent-setting {
+        padding-bottom: var(--space-2);
+
+        .setting-label,
+        .setting-value,
+        .setting-controls {
+          float: none;
+          width: 100%;
+          padding-right: 0;
+        }
+
+        .setting-label h3 {
+          margin-top: 0;
+          margin-bottom: var(--space-1);
+        }
+      }
+    }
+
+    .setting-override-warning {
       font-size: var(--font-down-1);
       color: var(--primary-medium);
 

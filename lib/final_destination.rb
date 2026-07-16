@@ -2,7 +2,6 @@
 
 require "socket"
 require "ipaddr"
-require "excon"
 require "rate_limiter"
 require "url_helper"
 
@@ -114,6 +113,10 @@ class FinalDestination
 
   def redirected?
     @limit < @max_redirects
+  end
+
+  def bot_challenge?
+    !!@bot_challenge
   end
 
   def request_headers
@@ -231,8 +234,13 @@ class FinalDestination
       return
     end
 
+    if @stop_at_blocked_pages && blocked_domain?(@uri)
+      @status = :blocked_page
+      return
+    end
+
     @ignored.each do |ignored|
-      if @uri&.hostname&.match?(ignored[:hostname]) &&
+      if @uri&.hostname == ignored[:hostname] &&
            @uri.path.start_with?(ignored[:path].presence || "/")
         @status = :resolved
         return @uri
@@ -380,6 +388,9 @@ class FinalDestination
     # this is weird an exception seems better
     @status = :failure
     @status_code = response.status
+    @bot_challenge =
+      response.headers["x-amzn-waf-action"].present? ||
+        response.headers["cf-mitigated"] == "challenge"
 
     log(:warn, "FinalDestination could not resolve URL (status #{response.status}): #{@uri}")
     nil
@@ -558,10 +569,8 @@ class FinalDestination
   private
 
   def uri(location)
-    begin
-      URI.parse(location)
-    rescue URI::Error
-    end
+    URI.parse(location)
+  rescue URI::Error
   end
 
   def fetch_canonical_url(body)

@@ -1,9 +1,9 @@
 import Component from "@glimmer/component";
 import { concat } from "@ember/helper";
-import { htmlSafe } from "@ember/template";
-import concatClass from "discourse/helpers/concat-class";
-import icon from "discourse/helpers/d-icon";
+import { trustHTML } from "@ember/template";
 import getURL from "discourse/lib/get-url";
+import dConcatClass from "discourse/ui-kit/helpers/d-concat-class";
+import dIcon from "discourse/ui-kit/helpers/d-icon";
 import { i18n } from "discourse-i18n";
 import { i18nForOwner } from "discourse/plugins/discourse-rewind/discourse/lib/rewind-i18n";
 
@@ -31,18 +31,18 @@ export default class BestPosts extends Component {
         </h2>
         <div class="rewind-report-container">
           {{#each @report.data as |post idx|}}
-            <div class={{concatClass "rewind-card" (this.rankClass idx)}}>
+            <div class={{dConcatClass "rewind-card" (this.rankClass idx)}}>
               <span class="best-posts --rank"></span>
               <span class="best-posts --rank"></span>
               <div class="best-posts__post">
-                <p>{{htmlSafe post.excerpt}}</p>
+                <p>{{trustHTML post.excerpt}}</p>
               </div>
               <div class="best-posts__metadata">
                 <span class="best-posts__likes">
-                  {{icon "heart"}}{{post.like_count}}
+                  {{dIcon "heart"}}{{post.like_count}}
                 </span>
                 <span class="best-posts__replies">
-                  {{icon "comment"}}{{post.reply_count}}
+                  {{dIcon "comment"}}{{post.reply_count}}
                 </span>
                 <a
                   href={{getURL

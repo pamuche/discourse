@@ -42,7 +42,7 @@ class DiscoursePoll::Poll
               end
             end
 
-        self.validate_votes!(poll, new_option_ids)
+        validate_votes!(poll, new_option_ids)
 
         old_option_ids =
           poll
@@ -81,9 +81,7 @@ class DiscoursePoll::Poll
         end
       end
 
-    if serialized_poll[:type] == RANKED_CHOICE
-      serialized_poll[:ranked_choice_outcome] = DiscoursePoll::RankedChoice.outcome(poll_id)
-    else
+    if serialized_poll[:type] != RANKED_CHOICE
       # Ensure consistency here as we do not have a unique index to limit the
       # number of votes per the poll's configuration.
       is_multiple = serialized_poll[:type] == MULTIPLE
@@ -145,24 +143,15 @@ class DiscoursePoll::Poll
   end
 
   def self.remove_vote(user, post_id, poll_name)
-    poll_id = nil
-
-    serialized_poll =
-      DiscoursePoll::Poll.change_vote(user, post_id, poll_name) do |poll|
-        poll_id = poll.id
-        PollVote.where(poll: poll, user: user).delete_all
-      end
-
-    if serialized_poll[:type] == RANKED_CHOICE
-      serialized_poll[:ranked_choice_outcome] = DiscoursePoll::RankedChoice.outcome(poll_id)
+    DiscoursePoll::Poll.change_vote(user, post_id, poll_name) do |poll|
+      PollVote.where(poll: poll, user: user).delete_all
     end
-
-    serialized_poll
   end
 
   def self.toggle_status(user, post_id, poll_name, status, raise_errors = true)
     Poll.transaction do
       post = Post.find_by(id: post_id)
+      post_id = post&.id
       guardian = Guardian.new(user)
 
       # post must not be deleted
@@ -187,7 +176,13 @@ class DiscoursePoll::Poll
         return
       end
 
-      poll = Poll.find_by(post_id: post_id, name: poll_name)
+      # user must be able to see the topic
+      unless guardian.can_see_topic?(post.topic)
+        raise DiscoursePoll::Error.new I18n.t("poll.user_cant_post_in_topic") if raise_errors
+        return
+      end
+
+      poll = Poll.find_by(post_id:, name: poll_name)
 
       if !poll
         if raise_errors
@@ -196,12 +191,32 @@ class DiscoursePoll::Poll
         return
       end
 
-      poll.status = status
-      poll.save!
+      if poll.status != status
+        poll.status = status
+
+        if poll.closed?
+          poll.closed_by = user
+          poll.closed_at = Time.zone.now
+          log_action = "poll_closed"
+        else
+          poll.closed_by = nil
+          poll.closed_at = nil
+          log_action = "poll_opened"
+        end
+
+        poll.save!
+
+        StaffActionLogger.new(user).log_custom(log_action, { post_id:, subject: poll_name })
+      end
 
       serialized_poll = PollSerializer.new(poll, root: false, scope: guardian).as_json
-      payload = { post_id: post_id, polls: [serialized_poll] }
 
+      # This payload is broadcast to every subscriber on the topic channel, so
+      # we only broadcast public data by serializing it as an anonymous user.
+      payload = {
+        post_id:,
+        polls: [PollSerializer.new(poll, root: false, scope: Guardian.new).as_json],
+      }
       post.publish_message!("/polls/#{post.topic_id}", payload)
 
       serialized_poll
@@ -487,6 +502,7 @@ class DiscoursePoll::Poll
   def self.change_vote(user, post_id, poll_name)
     Poll.transaction do
       post = Post.find_by(id: post_id)
+      post_id = post&.id
 
       # post must not be deleted
       raise DiscoursePoll::Error.new I18n.t("poll.post_is_deleted") if post.nil? || post.trashed?
@@ -502,7 +518,7 @@ class DiscoursePoll::Poll
         raise DiscoursePoll::Error.new I18n.t("poll.user_cant_post_in_topic")
       end
 
-      poll = Poll.includes(:poll_options).find_by(post_id: post_id, name: poll_name)
+      poll = Poll.includes(:poll_options).find_by(post_id:, name: poll_name)
 
       unless poll
         raise DiscoursePoll::Error.new I18n.t("poll.no_poll_with_this_name", name: poll_name)
@@ -522,8 +538,13 @@ class DiscoursePoll::Poll
       poll.reload
 
       serialized_poll = PollSerializer.new(poll, root: false, scope: guardian).as_json
-      payload = { post_id: post_id, polls: [serialized_poll] }
 
+      # This payload is broadcast to every subscriber on the topic channel, so
+      # we only broadcast public data by serializing it as an anonymous user.
+      payload = {
+        post_id:,
+        polls: [PollSerializer.new(poll, root: false, scope: Guardian.new).as_json],
+      }
       post.publish_message!("/polls/#{post.topic_id}", payload)
 
       serialized_poll

@@ -3,10 +3,10 @@ import { cached } from "@glimmer/tracking";
 import { fn, hash } from "@ember/helper";
 import { action } from "@ember/object";
 import { service } from "@ember/service";
-import DModal from "discourse/components/d-modal";
 import Form from "discourse/components/form";
 import { AUTO_GROUPS } from "discourse/lib/constants";
 import GroupChooser from "discourse/select-kit/components/group-chooser";
+import DModal from "discourse/ui-kit/d-modal";
 import { i18n } from "discourse-i18n";
 import DurationSelector from "../ai-quota-duration-selector";
 
@@ -47,6 +47,7 @@ export default class AiLlmQuotaModal extends Component {
       llm_model_id: null,
       max_tokens: null,
       max_usages: null,
+      max_cost: null,
       duration_seconds: moment.duration(1, "day").asSeconds(),
     };
   }
@@ -58,7 +59,7 @@ export default class AiLlmQuotaModal extends Component {
 
   @action
   validateForm(data, { addError, removeError }) {
-    if (!data.max_tokens && !data.max_usages) {
+    if (!data.max_tokens && !data.max_usages && !data.max_cost) {
       addError("max_tokens", {
         title: i18n("discourse_ai.llms.quotas.max_tokens"),
         message: i18n("discourse_ai.llms.quotas.max_tokens_required"),
@@ -67,9 +68,14 @@ export default class AiLlmQuotaModal extends Component {
         title: i18n("discourse_ai.llms.quotas.max_usages"),
         message: i18n("discourse_ai.llms.quotas.max_usages_required"),
       });
+      addError("max_cost", {
+        title: i18n("discourse_ai.llms.quotas.max_cost"),
+        message: i18n("discourse_ai.llms.quotas.max_cost_required"),
+      });
     } else {
       removeError("max_tokens");
       removeError("max_usages");
+      removeError("max_cost");
     }
   }
 
@@ -91,16 +97,17 @@ export default class AiLlmQuotaModal extends Component {
             @title={{i18n "discourse_ai.llms.quotas.group"}}
             @validation="required"
             @format="large"
+            @type="custom"
             as |field|
           >
-            <field.Custom>
+            <field.Control>
               <GroupChooser
                 @value={{data.group_id}}
                 @content={{this.availableGroups}}
                 @onChange={{fn this.setGroupId field}}
                 @options={{hash maximum=1}}
               />
-            </field.Custom>
+            </field.Control>
           </form.Field>
 
           <form.Field
@@ -108,9 +115,10 @@ export default class AiLlmQuotaModal extends Component {
             @title={{i18n "discourse_ai.llms.quotas.max_tokens"}}
             @tooltip={{i18n "discourse_ai.llms.quotas.max_tokens_help"}}
             @format="large"
+            @type="input-number"
             as |field|
           >
-            <field.Input @type="number" min="1" />
+            <field.Control min="1" />
           </form.Field>
 
           <form.Field
@@ -118,9 +126,21 @@ export default class AiLlmQuotaModal extends Component {
             @title={{i18n "discourse_ai.llms.quotas.max_usages"}}
             @tooltip={{i18n "discourse_ai.llms.quotas.max_usages_help"}}
             @format="large"
+            @type="input-number"
             as |field|
           >
-            <field.Input @type="number" min="1" />
+            <field.Control min="1" />
+          </form.Field>
+
+          <form.Field
+            @name="max_cost"
+            @title={{i18n "discourse_ai.llms.quotas.max_cost"}}
+            @tooltip={{i18n "discourse_ai.llms.quotas.max_cost_help"}}
+            @format="large"
+            @type="input-number"
+            as |field|
+          >
+            <field.Control min="0.01" step="0.01" />
           </form.Field>
 
           <form.Field
@@ -128,14 +148,15 @@ export default class AiLlmQuotaModal extends Component {
             @title={{i18n "discourse_ai.llms.quotas.duration"}}
             @validation="required"
             @format="large"
+            @type="custom"
             as |field|
           >
-            <field.Custom>
+            <field.Control>
               <DurationSelector
                 @value={{data.duration_seconds}}
                 @onChange={{field.set}}
               />
-            </field.Custom>
+            </field.Control>
           </form.Field>
 
           <form.Submit

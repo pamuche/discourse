@@ -1,13 +1,13 @@
-import { htmlSafe } from "@ember/template";
-import DButton from "discourse/components/d-button";
+import { trustHTML } from "@ember/template";
 import PluginOutlet from "discourse/components/plugin-outlet";
+import DButton from "discourse/ui-kit/d-button";
 import { i18n } from "discourse-i18n";
 
 const SignupPageCta = <template>
   <div class="signup-page-cta">
     {{#if @disclaimerHtml}}
       <div class="signup-page-cta__disclaimer">
-        {{htmlSafe @disclaimerHtml}}
+        {{trustHTML @disclaimerHtml}}
       </div>
     {{/if}}
     <div class="signup-page-cta__buttons">

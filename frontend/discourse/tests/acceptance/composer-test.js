@@ -150,6 +150,21 @@ acceptance(`Composer`, function (needs) {
     );
   });
 
+  test("fires resize event after width transition", async function (assert) {
+    await visit("/");
+    await click("#create-topic");
+
+    const appEvents = this.container.lookup("service:app-events");
+    let resizedTriggered = false;
+    appEvents.on("composer:resized", () => (resizedTriggered = true));
+
+    await triggerEvent("#reply-control", "transitionend", {
+      propertyName: "max-width",
+    });
+
+    assert.true(resizedTriggered, "composer:resized is triggered");
+  });
+
   test("composer controls", async function (assert) {
     await visit("/");
     assert.dom("#create-topic").exists("the create button is visible");
@@ -286,6 +301,12 @@ acceptance(`Composer`, function (needs) {
 
     await click(".d-modal__footer button");
     assert.dom(".d-modal").doesNotExist("the modal can be dismissed");
+    assert
+      .dom("#reply-control")
+      .hasClass("closed", "composer is closed after enqueuing");
+    assert
+      .dom(".saving-text")
+      .doesNotExist("composer is not stuck in saving state");
   });
 
   test("Can display a message and route to a URL", async function (assert) {
@@ -352,7 +373,7 @@ acceptance(`Composer`, function (needs) {
     await click(".topic-post[data-post-number='1'] button.edit");
 
     await click(".d-modal__footer .discard-draft-modal__cancel-btn");
-    assert.dom(".discard-draft-modal.modal").doesNotExist();
+    assert.dom(".discard-draft-modal.d-modal").doesNotExist();
     assert
       .dom(".d-editor-input")
       .hasValue(
@@ -362,7 +383,7 @@ acceptance(`Composer`, function (needs) {
 
     await click(".topic-post[data-post-number='1'] button.edit");
     await click(".d-modal__footer .discard-draft-modal__discard-btn");
-    assert.dom(".discard-draft-modal.modal").doesNotExist();
+    assert.dom(".discard-draft-modal.d-modal").doesNotExist();
 
     assert
       .dom(".d-editor-input")
@@ -380,10 +401,10 @@ acceptance(`Composer`, function (needs) {
 
     await visit("/t/this-is-a-test-topic/9");
     await click("#topic-footer-buttons .create");
-    assert.dom(".discard-draft-modal.modal").exists();
+    assert.dom(".discard-draft-modal.d-modal").exists();
 
     await click(".d-modal__footer .discard-draft-modal__cancel-btn");
-    assert.dom(".discard-draft-modal.modal").doesNotExist();
+    assert.dom(".discard-draft-modal.d-modal").doesNotExist();
 
     assert
       .dom(".d-editor-input")
@@ -441,14 +462,16 @@ acceptance(`Composer`, function (needs) {
     );
     await click("#topic-footer-buttons .btn.create");
     assert
-      .dom(".discard-draft-modal.modal")
+      .dom(".discard-draft-modal.d-modal")
       .exists("pops up the discard drafts modal");
 
     await click(".d-modal__footer .discard-draft-modal__cancel-btn");
 
-    assert.dom(".discard-draft-modal.modal").doesNotExist("hides modal");
+    assert.dom(".discard-draft-modal.d-modal").doesNotExist("hides modal");
     await click("#topic-footer-buttons .btn.create");
-    assert.dom(".discard-draft-modal.modal").exists("pops up the modal again");
+    assert
+      .dom(".discard-draft-modal.d-modal")
+      .exists("pops up the modal again");
 
     await click(".d-modal__footer .discard-draft-modal__discard-btn");
 
@@ -484,12 +507,12 @@ acceptance(`Composer`, function (needs) {
 
     await click("#reply-control .discard-button");
     assert
-      .dom(".discard-draft-modal.modal")
+      .dom(".discard-draft-modal.d-modal")
       .exists("shows Discard draft confirmation modal");
 
     await click(".d-modal__footer .discard-draft-modal__cancel-btn");
     assert
-      .dom(".discard-draft-modal.modal")
+      .dom(".discard-draft-modal.d-modal")
       .doesNotExist("hides modal on Cancel button click");
     assert
       .dom(".d-editor-input")
@@ -507,12 +530,12 @@ acceptance(`Composer`, function (needs) {
 
     await click("#reply-control .discard-button");
     assert
-      .dom(".discard-draft-modal.modal")
+      .dom(".discard-draft-modal.d-modal")
       .exists("pops up the discard drafts modal");
 
     await triggerKeyEvent(".discard-draft-modal", "keydown", "Escape");
     assert
-      .dom(".discard-draft-modal.modal")
+      .dom(".discard-draft-modal.d-modal")
       .doesNotExist("hides modal on Esc key stroke");
 
     await fillIn(
@@ -562,6 +585,12 @@ acceptance(`Composer`, function (needs) {
     await click(".d-modal__footer button");
     assert.dom(".d-modal").doesNotExist("the modal can be dismissed");
     assert.dom(".pending-posts .reviewable-item").exists();
+    assert
+      .dom("#reply-control")
+      .hasClass("closed", "composer is closed after enqueuing");
+    assert
+      .dom(".saving-text")
+      .doesNotExist("composer is not stuck in saving state");
   });
 
   test("Edit the first post", async function (assert) {
@@ -654,7 +683,7 @@ acceptance(`Composer`, function (needs) {
     await fillIn(".d-editor-input", "This is a dirty reply");
     await click(".topic-post[data-post-number='2'] button.edit");
     assert
-      .dom(".discard-draft-modal.modal")
+      .dom(".discard-draft-modal.d-modal")
       .exists("pops up a confirmation dialog");
 
     await click(".d-modal__footer .discard-draft-modal__discard-btn");
@@ -894,6 +923,26 @@ acceptance(`Composer`, function (needs) {
       .exists("toggle whisper is available when reply to topic");
   });
 
+  test("Composer restores whisper state from draft", async function (assert) {
+    pretender.get("/drafts/topic_9.json", function () {
+      return response(200, {
+        draft: JSON.stringify({
+          reply: "draft with whisper",
+          action: "reply",
+          whisper: true,
+        }),
+        draft_sequence: 1,
+      });
+    });
+
+    await visit("/t/this-is-a-test-topic/9");
+    await click(".topic-post[data-post-number='2'] button.reply");
+
+    assert
+      .dom("#reply-control.composing-whisper")
+      .exists("composer shows whisper styling from draft");
+  });
+
   test("Composer draft with dirty reply can toggle to edit", async function (assert) {
     await visit("/t/this-is-a-test-topic/9");
 
@@ -902,7 +951,7 @@ acceptance(`Composer`, function (needs) {
     await click(".toggler");
     await click(".topic-post[data-post-number='2'] button.edit");
     assert
-      .dom(".discard-draft-modal.modal")
+      .dom(".discard-draft-modal.d-modal")
       .exists("pops up a confirmation dialog");
     assert
       .dom(".d-modal__footer .discard-draft-modal__cancel-btn")
@@ -926,7 +975,7 @@ acceptance(`Composer`, function (needs) {
     await click("#create-topic");
 
     assert
-      .dom(".discard-draft-modal.modal")
+      .dom(".discard-draft-modal.d-modal")
       .exists("pops up a confirmation dialog");
     assert
       .dom(".d-modal__footer .discard-draft-modal__discard-btn")
@@ -1146,10 +1195,11 @@ acceptance(`Composer - Customizations`, function (needs) {
   needs.site({ can_tag_topics: true });
 
   function customComposerAction(composer) {
-    return (
-      (composer.tags || []).includes("monkey") &&
-      composer.action === CREATE_TOPIC
+    const tags = composer.tags || [];
+    const hasMonkey = tags.some(
+      (t) => (typeof t === "string" ? t : t.name) === "monkey"
     );
+    return hasMonkey && composer.action === CREATE_TOPIC;
   }
 
   needs.hooks.beforeEach(() => {
@@ -1177,7 +1227,7 @@ acceptance(`Composer - Customizations`, function (needs) {
     assert.dom(".save-or-cancel button").hasText(i18n("composer.create_topic"));
     const tags = selectKit(".mini-tag-chooser");
     await tags.expand();
-    await tags.selectRowByValue("monkey");
+    await tags.selectRowByName("monkey");
     assert.dom(".action-title").hasText("custom text");
     assert.dom(".save-or-cancel button").hasText(i18n("composer.emoji"));
   });

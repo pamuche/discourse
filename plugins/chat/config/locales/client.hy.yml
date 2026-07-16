@@ -12,14 +12,21 @@ hy:
           always: "Միշտ"
           never: "Երբեք"
     chat:
+      edit_category:
+        channel: "Ալիք"
+        description: "Նկարագրություն"
+        actions: "Գործողություններ"
+        settings: "Կարգավորումներ"
       deleted_chat_username: ջնջված
       dates:
         yesterday: "Երեկվա"
       create: "Ստեղծել"
       cancel: "Չեղարկել"
+      pinned: "Ամրակցված"
       channel_settings:
         edit: "Խմբագրել"
         add: "Ավելացնել"
+        notification_settings_context: "Ծանուցումներ"
         join: "Միանալ"
         leave: "Լքել"
       close: "Փակել"
@@ -78,6 +85,7 @@ hy:
           one: "%{count} անդամ"
           other: "%{count} անդամ"
       create_channel:
+        description: "Նկարագրություն"
         type: "Տիպը"
         types:
           category: "Կատեգորիա"
@@ -163,3 +171,12 @@ hy:
           fields:
             message:
               label: Նոր Հաղորդագրություն
+    discourse_workflows:
+      chat_message_created:
+        channel_id: "Ալիք"
+      send_chat_message:
+        channel_id: "Ալիք"
+        message: "Ուղարկել"
+      chat_approval:
+        message: "Ուղարկել"
+        channel_id: "Ալիք"

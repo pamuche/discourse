@@ -48,6 +48,32 @@ describe "SetTopicTimer" do
     end
   end
 
+  it "skips auto_close timer when topic is already closed" do
+    configure_automation("auto_close", 60)
+
+    post =
+      PostCreator.new(Fabricate(:admin), raw: "my new topic", title: "Test topic for timer").create!
+    post.topic.update_status("closed", true, Discourse.system_user)
+
+    expect { PostRevisor.new(post).revise!(post.user, raw: "an edit") }.not_to change {
+      post.topic.reload.topic_timers.count
+    }
+    expect(post.topic.reload.closed).to eq(true)
+  end
+
+  it "skips auto_close_after_last_post timer when topic is already closed" do
+    configure_automation("auto_close_after_last_post", 60)
+
+    post =
+      PostCreator.new(Fabricate(:admin), raw: "my new topic", title: "Test topic for timer").create!
+    post.topic.update_status("closed", true, Discourse.system_user)
+
+    expect { PostRevisor.new(post).revise!(post.user, raw: "an edit") }.not_to change {
+      post.topic.reload.topic_timers.count
+    }
+    expect(post.topic.reload.closed).to eq(true)
+  end
+
   it "handles auto_close_after_last_post timer" do
     configure_automation("auto_close_after_last_post", 60)
 
@@ -102,6 +128,26 @@ describe "SetTopicTimer" do
       expect(timer.execute_at).to be_within(1.second).of(60.minutes.from_now)
       expect(timer.duration_minutes).to eq(60)
       expect(timer.based_on_last_post).to eq(false)
+    end
+  end
+
+  it "handles auto_delete_after_last_post timer" do
+    configure_automation("auto_delete_after_last_post", 60)
+
+    freeze_time do
+      post =
+        PostCreator.new(
+          Fabricate(:admin),
+          raw: "my new topic",
+          title: "Test topic for timer",
+        ).create!
+
+      timer = post.topic.reload.topic_timers[0]
+      expect(timer).not_to be_nil
+      expect(timer.status_type).to eq(TopicTimer.types[:delete])
+      expect(timer.execute_at).to be_within(1.second).of(60.minutes.from_now)
+      expect(timer.duration_minutes).to eq(60)
+      expect(timer.based_on_last_post).to eq(true)
     end
   end
 

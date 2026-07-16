@@ -6,7 +6,7 @@ import selectKit from "discourse/tests/helpers/select-kit-helper";
 import AutomationField from "discourse/plugins/automation/admin/components/automation-field";
 import AutomationFabricators from "discourse/plugins/automation/admin/lib/fabricators";
 
-module("Integration | Component | da-relative_time-field", function (hooks) {
+module("Integration | Component | DaRelativeTimeField", function (hooks) {
   setupRenderingTest(hooks);
 
   hooks.beforeEach(function () {
@@ -28,11 +28,15 @@ module("Integration | Component | da-relative_time-field", function (hooks) {
     );
 
     await fillIn(".relative-time-duration", "4");
-    assert.strictEqual(this.field.metadata.value, 4);
 
     await selectKit().expand();
     await selectKit().selectRowByValue("hours");
 
     assert.strictEqual(this.field.metadata.value, 4 * 60);
+
+    await selectKit().expand();
+    await selectKit().selectRowByValue("mins");
+
+    assert.strictEqual(this.field.metadata.value, 4);
   });
 });

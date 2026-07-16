@@ -59,8 +59,6 @@ ug:
             label: مەزمۇن
           delay:
             label: كېچىكىش (مىنۇت)
-          prefers_encrypt:
-            label: ئەگەر ئىشلەتكىلى بولسا شەخسىي ئۇچۇرنى شىفىرلايدۇ
         group:
           label: گۇرۇپپا
         text:
@@ -207,9 +205,6 @@ ug:
               description: "تاللاشچان، پەقەت يازما بۇ ئىقتىدارلارغا ئىگە بولغاندىلا چەكلىك قوزغىتىلىدۇ"
           created: قۇرغان ۋاقتى
           edited: تەھرىرلەندى
-          topics: بارلىق تېما
-          personal_messages: شەخسىي ئۇچۇر
-          public_topics: ئاممىۋى تېما (بارلىق بىخەتەر سەھىپىنى ئۆز ئىچىگە ئالمايدۇ)
           with_images: سۈرەت
           with_links: ئۇلانما
           with_code: كود

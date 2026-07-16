@@ -1,7 +1,8 @@
 import Component from "@glimmer/component";
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
 import PluginOutlet from "discourse/components/plugin-outlet";
 import lazyHash from "discourse/helpers/lazy-hash";
+import { i18n } from "discourse-i18n";
 
 export default class TopicLink extends Component {
   get url() {
@@ -19,7 +20,13 @@ export default class TopicLink extends Component {
         data-topic-id={{@topic.id}}
         class="title"
         ...attributes
-      >{{htmlSafe @topic.fancyTitle}}{{yield}}</a>
+      >
+        {{~trustHTML @topic.fancyTitle~}}
+        {{~#if @topic.visited~}}
+          <span class="sr-only">&nbsp;{{i18n "topic.sr_read"}}</span>
+        {{~/if~}}
+        {{~yield~}}
+      </a>
       {{~! no whitespace ~}}
     </PluginOutlet>
     {{~! no whitespace ~}}

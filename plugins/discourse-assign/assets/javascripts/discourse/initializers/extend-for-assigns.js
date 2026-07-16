@@ -1,13 +1,13 @@
+import { computed } from "@ember/object";
 import { getOwner } from "@ember/owner";
-import { htmlSafe } from "@ember/template";
-import { renderAvatar } from "discourse/helpers/user-avatar";
-import discourseComputed from "discourse/lib/decorators";
+import { trustHTML } from "@ember/template";
 import getURL from "discourse/lib/get-url";
 import { iconHTML } from "discourse/lib/icon-library";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { registerTopicFooterDropdown } from "discourse/lib/register-topic-footer-dropdown";
 import { applyValueTransformer } from "discourse/lib/transformer";
 import { escapeExpression } from "discourse/lib/utilities";
+import { renderAvatar } from "discourse/ui-kit/helpers/d-user-avatar";
 import { i18n } from "discourse-i18n";
 import AssignButton from "../components/assign-button";
 import BulkActionsAssignUser from "../components/bulk-actions/bulk-assign-user";
@@ -24,6 +24,7 @@ import { extendTopicModel } from "../models/topic";
 const DEPENDENT_KEYS = [
   "topic.assigned_to_user",
   "topic.assigned_to_group",
+  "topic.can_assign",
   "currentUser.can_assign",
   "topic.assigned_to_user.username",
   "topic.assigned_to_user.name",
@@ -38,6 +39,10 @@ function defaultTitle(topic) {
   } else {
     return i18n("discourse_assign.assign.help");
   }
+}
+
+function canAssignTopic(context) {
+  return context.topic?.can_assign ?? context.currentUser?.can_assign;
 }
 
 function registerTopicFooterButtons(api) {
@@ -63,7 +68,7 @@ function registerTopicFooterButtons(api) {
       return i18n("discourse_assign.assign.title");
     },
     async action() {
-      if (!this.currentUser?.can_assign) {
+      if (!canAssignTopic(this)) {
         return;
       }
 
@@ -90,7 +95,7 @@ function registerTopicFooterButtons(api) {
     dependentKeys: DEPENDENT_KEYS,
     displayed() {
       return (
-        this.currentUser?.can_assign &&
+        canAssignTopic(this) &&
         !this.topic.isAssigned() &&
         !this.topic.hasAssignedPosts()
       );
@@ -111,28 +116,28 @@ function registerTopicFooterButtons(api) {
       const label = i18n("discourse_assign.assigned_to");
 
       if (user) {
-        return htmlSafe(
-          `<span class="unassign-label"><span class="text">${label}&nbsp;</span><span class="username">${
+        return trustHTML(
+          `<span class="unassign-label"><span class="text">${label}&nbsp;</span><span class="username">${escapeExpression(
             user.username
-          }</span></span>&nbsp;${renderAvatar(user, {
+          )}</span></span>&nbsp;${renderAvatar(user, {
             imageSize: "small",
             ignoreTitle: true,
           })}`
         );
       } else if (group) {
-        return htmlSafe(
-          `<span class="unassign-label">${label}</span> @${group.name}`
+        return trustHTML(
+          `<span class="unassign-label">${label}</span> @${escapeExpression(group.name)}`
         );
       }
     },
     dropdown() {
-      return this.currentUser?.can_assign && this.topic.isAssigned();
+      return canAssignTopic(this) && this.topic.isAssigned();
     },
     classNames: ["assign"],
     dependentKeys: DEPENDENT_KEYS,
     displayed() {
       // only display the button in the mobile view
-      return this.currentUser?.can_assign && this.site.mobileView;
+      return canAssignTopic(this) && this.site.mobileView;
     },
   });
 
@@ -150,12 +155,12 @@ function registerTopicFooterButtons(api) {
     translatedLabel() {
       const label = i18n("discourse_assign.unassign.title");
 
-      return htmlSafe(
+      return trustHTML(
         `<span class="unassign-label"><span class="text">${label}</span></span>`
       );
     },
     action() {
-      if (!this.currentUser?.can_assign) {
+      if (!canAssignTopic(this)) {
         return;
       }
 
@@ -166,16 +171,14 @@ function registerTopicFooterButtons(api) {
       taskActions.unassign(this.topic.id);
     },
     dropdown() {
-      return this.currentUser?.can_assign && this.topic.isAssigned();
+      return canAssignTopic(this) && this.topic.isAssigned();
     },
     classNames: ["assign"],
     dependentKeys: DEPENDENT_KEYS,
     displayed() {
       // only display the button in the mobile view
       return (
-        this.currentUser?.can_assign &&
-        this.site.mobileView &&
-        this.topic.isAssigned()
+        canAssignTopic(this) && this.site.mobileView && this.topic.isAssigned()
       );
     },
   });
@@ -194,12 +197,12 @@ function registerTopicFooterButtons(api) {
     translatedLabel() {
       const label = i18n("discourse_assign.reassign.to_self");
 
-      return htmlSafe(
+      return trustHTML(
         `<span class="unassign-label"><span class="text">${label}</span></span>`
       );
     },
     async action() {
-      if (!this.currentUser?.can_assign) {
+      if (!canAssignTopic(this)) {
         return;
       }
 
@@ -211,7 +214,7 @@ function registerTopicFooterButtons(api) {
       await taskActions.reassignUserToTopic(this.currentUser, this.topic);
     },
     dropdown() {
-      return this.currentUser?.can_assign && this.topic.isAssigned();
+      return canAssignTopic(this) && this.topic.isAssigned();
     },
     classNames: ["assign"],
     dependentKeys: DEPENDENT_KEYS,
@@ -219,7 +222,7 @@ function registerTopicFooterButtons(api) {
       return (
         // only display the button in the mobile view
         this.site.mobileView &&
-        this.currentUser?.can_assign &&
+        canAssignTopic(this) &&
         this.topic.isAssigned() &&
         this.topic.assigned_to_user?.username !== this.currentUser.username
       );
@@ -240,12 +243,12 @@ function registerTopicFooterButtons(api) {
     translatedLabel() {
       const label = i18n("discourse_assign.reassign.title_w_ellipsis");
 
-      return htmlSafe(
+      return trustHTML(
         `<span class="unassign-label"><span class="text">${label}</span></span>`
       );
     },
     async action() {
-      if (!this.currentUser?.can_assign) {
+      if (!canAssignTopic(this)) {
         return;
       }
 
@@ -257,13 +260,13 @@ function registerTopicFooterButtons(api) {
       });
     },
     dropdown() {
-      return this.currentUser?.can_assign && this.topic.isAssigned();
+      return canAssignTopic(this) && this.topic.isAssigned();
     },
     classNames: ["assign"],
     dependentKeys: DEPENDENT_KEYS,
     displayed() {
       // only display the button in the mobile view
-      return this.currentUser?.can_assign && this.site.mobileView;
+      return canAssignTopic(this) && this.site.mobileView;
     },
   });
 }
@@ -271,8 +274,9 @@ function registerTopicFooterButtons(api) {
 function initialize(api) {
   const siteSettings = api.container.lookup("service:site-settings");
   const currentUser = api.getCurrentUser();
+  const canAssignGlobally = currentUser?.can_assign_globally;
 
-  if (siteSettings.assigns_public || currentUser?.can_assign) {
+  if (siteSettings.assigns_public || canAssignGlobally) {
     api.addNavigationBarItem({
       name: "unassigned",
       customFilter: (category) => {
@@ -295,14 +299,14 @@ function initialize(api) {
       },
       before: "top",
     });
+  }
 
-    if (api.getCurrentUser()?.can_assign) {
-      customizePostMenu(api);
-    }
+  if (currentUser?.can_assign) {
+    customizePostMenu(api);
   }
 
   api.addAdvancedSearchOptions(
-    api.getCurrentUser()?.can_assign
+    canAssignGlobally
       ? {
           inOptionsForUsers: [
             {
@@ -322,14 +326,14 @@ function initialize(api) {
     "model:bookmark",
     (Superclass) =>
       class extends Superclass {
-        @discourseComputed("assigned_to_user")
-        assignedToUserPath(assignedToUser) {
-          return assignedToUserPath(assignedToUser);
+        @computed("assigned_to_user")
+        get assignedToUserPath() {
+          return assignedToUserPath(this.assigned_to_user);
         }
 
-        @discourseComputed("assigned_to_group")
-        assignedToGroupPath(assignedToGroup) {
-          return assignedToGroupPath(assignedToGroup);
+        @computed("assigned_to_group")
+        get assignedToGroupPath() {
+          return assignedToGroupPath(this.assigned_to_group);
         }
       }
   );
@@ -418,7 +422,7 @@ function initialize(api) {
 
       return `<${tagName} class="assigned-to discourse-tag simple" ${href}>${icon}<span title="${escapeExpression(
         note
-      )}">${name}</span></${tagName}>`;
+      )}">${escapeExpression(name)}</span></${tagName}>`;
     };
 
     // is there's one assignment just return the tag
@@ -490,7 +494,9 @@ function initialize(api) {
               }
 
               if (data.post_id) {
+                topic.indirectly_assigned_to ||= {};
                 if (data.type === "assigned") {
+                  topic.indirectly_assigned_to[data.post_id] ||= {};
                   topic.indirectly_assigned_to[data.post_id].assigned_to =
                     data.assigned_to;
                 } else if (data.type === "unassigned") {
@@ -539,7 +545,8 @@ function customizePost(api, siteSettings) {
     "assigned_to_user",
     "assigned_to_user_id",
     "assignment_note",
-    "assignment_status"
+    "assignment_status",
+    "can_assign"
   );
 
   api.modifyClass(
@@ -649,7 +656,7 @@ export default {
 
     withPluginApi((api) => {
       const currentUser = container.lookup("service:current-user");
-      if (currentUser?.can_assign) {
+      if (currentUser?.can_assign_globally) {
         api.modifyClass(
           "component:search-advanced-options",
           (Superclass) =>
@@ -703,7 +710,9 @@ export default {
         id: "assign-topics",
         label: "topics.bulk.assign",
         icon: "user-plus",
-        class: "btn-default assign-topics",
+        class: "assign-topics",
+        description: "topics.bulk.assign_description",
+        confirmButtonTranslationKey: "topics.bulk.confirm_assign_topics",
         action({ setComponent }) {
           setComponent(BulkActionsAssignUser);
         },
@@ -714,7 +723,9 @@ export default {
         id: "unassign-topics",
         label: "topics.bulk.unassign",
         icon: "user-xmark",
-        class: "btn-default unassign-topics",
+        class: "unassign-topics",
+        description: "topics.bulk.unassign_description",
+        confirmButtonTranslationKey: "topics.bulk.confirm_unassign_topics",
         action({ performAndRefresh }) {
           performAndRefresh({ type: "unassign" });
         },

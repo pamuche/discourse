@@ -38,7 +38,7 @@ class PostMover
     topic
   end
 
-  def to_new_topic(title, category_id = nil, tags = nil)
+  def to_new_topic(title, category_id = nil, tag_ids: nil, tags: nil)
     @move_type = PostMover.move_types[:new_topic]
     @creating_new_topic = true
 
@@ -56,7 +56,11 @@ class PostMover
             created_at: post.created_at,
             archetype: archetype,
           )
-        DiscourseTagging.tag_topic_by_names(new_topic, Guardian.new(user), tags)
+        if tag_ids.present?
+          DiscourseTagging.tag_topic_by_ids(new_topic, Guardian.new(user), tag_ids)
+        elsif tags.present?
+          DiscourseTagging.tag_topic_by_names(new_topic, Guardian.new(user), tags)
+        end
         move_posts_to new_topic
         watch_new_topic
         update_topic_excerpt new_topic
@@ -75,6 +79,15 @@ class PostMover
   def move_posts_to(topic)
     Guardian.new(user).ensure_can_see! topic
     @destination_topic = topic
+
+    # Serialize concurrent moves/merges on the same source topic. Without this
+    # lock, two transactions can each read `ordered_posts.last.post_number` at
+    # the same value, both compute the same `@first_post_number_moved`, and
+    # then collide on the `(topic_id, post_number)` unique index when each
+    # tries to insert the "split_topic" moderator post. The lock is released
+    # on commit/rollback of the surrounding `Topic.transaction`.
+    @original_topic.lock!
+
     ensure_acting_user_is_allowed_in_destination
 
     # when a topic contains some posts after moving posts to another topic we shouldn't close it
@@ -101,9 +114,22 @@ class PostMover
     if @options[:freeze_original]
       # in this case we need to add the moderator post after the last copied post
       if @full_move
-        @first_post_number_moved = @original_topic.ordered_posts.last.post_number + 1
+        # Use max_post_number (which includes soft-deleted posts) so the number
+        # we force via `add_moderator_post` matches what `Topic.next_post_number`
+        # will atomically assign via raw SQL. Otherwise a deleted post at the
+        # tail leaves a tombstone in `index_posts_on_topic_id_and_post_number`
+        # that collides with our `update!(post_number: ...)`.
+        @first_post_number_moved = @original_topic.max_post_number + 1
       else
-        from_posts = @original_topic.ordered_posts.where("post_number > ?", posts.last.post_number)
+        # Same reason: shift all posts above `posts.last.post_number`, including
+        # soft-deleted ones, so the slot at `posts.last.post_number + 1` is
+        # guaranteed free in the unique index.
+        from_posts =
+          @original_topic
+            .posts
+            .with_deleted
+            .where("post_number > ?", posts.last.post_number)
+            .order(:post_number)
         shift_post_numbers(from_posts)
         @first_post_number_moved = posts.last.post_number + 1
       end
@@ -119,6 +145,7 @@ class PostMover
     update_last_post_stats
     update_upload_security_status
     update_bookmarks
+    update_reviewables
 
     close_topic_and_schedule_deletion if @full_move
 
@@ -637,8 +664,8 @@ class PostMover
   end
 
   def update_statistics
-    destination_topic.update_statistics
-    original_topic.update_statistics
+    destination_topic.update_statistics!
+    original_topic.update_statistics!
     TopicUser.update_post_action_cache(
       topic_id: [original_topic.id, destination_topic.id],
       post_id: @post_ids,
@@ -696,14 +723,12 @@ class PostMover
 
   def posts
     @posts ||=
-      begin
-        Post
-          .where(topic: @original_topic, id: post_ids)
-          .where.not(post_type: Post.types[:small_action])
-          .where.not(raw: "")
-          .order(:created_at)
-          .tap { |posts| raise Discourse::InvalidParameters.new(:post_ids) if posts.empty? }
-      end
+      Post
+        .where(topic: @original_topic, id: post_ids)
+        .where.not(post_type: Post.types[:small_action])
+        .where.not(raw: "")
+        .order(:created_at)
+        .tap { |posts| raise Discourse::InvalidParameters.new(:post_ids) if posts.empty? }
   end
 
   def update_last_post_stats
@@ -727,6 +752,13 @@ class PostMover
       Jobs.enqueue(:sync_topic_user_bookmarked, topic_id: @original_topic.id)
       Jobs.enqueue(:sync_topic_user_bookmarked, topic_id: @destination_topic.id)
     end
+  end
+
+  def update_reviewables
+    Reviewable.where(target_type: "Post", target_id: @post_ids).update_all(
+      topic_id: @destination_topic.id,
+      category_id: @destination_topic.category_id,
+    )
   end
 
   def watch_new_topic

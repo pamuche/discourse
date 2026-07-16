@@ -30,7 +30,6 @@ cs:
     chat_editing_grace_period_max_diff_low_trust: "Maximální počet povolených změn znaků v době odkladu úpravy chatu, pokud se změní více, zobrazí se značka (upraveno) u zprávy chatu (úroveň důvěry 0 a 1)."
     chat_editing_grace_period_max_diff_high_trust: "Maximální počet povolených změn znaků v době odkladu úpravy chatu, pokud se změní více, zobrazí se značka (upraveno) u zprávy chatu (úroveň důvěry 2 a vyšší)."
     chat_preferred_index: "Preferovaný panel při načítání /chat"
-    allow_chat_in_anonymous_mode: "Povolením tohoto nastavení umožníte uživatelům, kteří procházejí vaše stránky anonymně, používat chat. Toto nastavení vyžaduje, aby bylo povoleno nastavení `allow anonymous mode`."
     chat_search_enabled: "Povolením tohoto nastavení umožníte uživatelům prohledávat zprávy chatu."
     errors:
       chat_default_channel: "Výchozí kanál chatu musí být veřejný kanál."
@@ -73,6 +72,7 @@ cs:
         closed: "Kanál je uzavřen, žádné zprávy nelze upravovat ani mazat"
         read_only: "Kanál je pouze pro čtení, žádné zprávy nelze upravovat ani mazat"
       user_cannot_send_message: "Momentálně nelze odesílat zprávy."
+      user_not_in_channel: "Musíte být členem tohoto kanálu."
       rate_limit_exceeded: "Překročení limitu zpráv chatu, které lze odeslat během 30 sekund."
       auto_silence_from_flags: "Zpráva v chatu nahlášená dostatečně vysokým skóre, aby uživatele ztišila."
       channel_cannot_be_archived: "Kanál nelze v tuto chvíli archivovat, musí být buď uzavřen, nebo otevřen pro archivaci."
@@ -151,10 +151,11 @@ cs:
           title: "Nesouhlasit a obnovit zprávu"
           description: "Obnovit zprávu, aby ji mohli vidět všichni uživatelé."
         disagree:
-          title: "Neschvaluji"
+          title: "Ponechat zprávu"
+          description: "Nesouhlasit s nahlášením a ponechat zprávu beze změny."
         ignore:
-          title: "Nedělat nic"
-          description: "Ignorovat nahlášení odstraněním z fronty bez jakékoli akce."
+          title: "Ignorovat nahlášení"
+          description: "Odstranit z fronty a neprovádět žádnou akci."
       direct_messages:
         transcript_title: "Přepis předchozích zpráv v %{channel_name}"
         transcript_body: "Abychom vám poskytli více souvislostí, zahrnuli jsme do této konverzace přepis předchozích zpráv (až 10):\n\n%{transcript}"
@@ -251,10 +252,17 @@ cs:
         other_type: "%{username} zmínil/a %{identifier} v soukromém chatu"
       new_chat_message: '%{username} poslal zprávu v "%{channel}“'
       new_direct_chat_message: "%{username} poslal/a zprávu v soukromém chatu"
+    actions:
+      chat_reply:
+        title: Odpověď
   discourse_automation:
     scriptables:
       send_chat_message:
         title: Odeslat zprávu chatu
+  discourse_workflows:
+    chat_approval:
+      default_approve_label: "Schválení"
+      default_deny_label: "Odmítnout"
   reviewable_score_types:
     needs_review:
       title: "Potřebuje revizi"
@@ -287,25 +295,18 @@ cs:
           few: "[%{site_name}] Nové zprávy ve vlákně %{channel}"
           many: "[%{site_name}] Nové zprávy ve vlákně %{channel}"
           other: "[%{site_name}] Nové zprávy ve vlákně %{channel}"
-        watched_threads:
-          one: "[%{site_name}] Nové zprávy ve vlákně %{channel} and %{count} dalším"
-          few: "[%{site_name}] Nové zprávy ve vlákně %{channel} and %{count} dalších"
-          many: "[%{site_name}] Nové zprávy ve vlákně %{channel} and %{count} dalších"
-          other: "[%{site_name}] Nové zprávy ve vlákně %{channel} and %{count} dalších"
         chat_dm_1:
           one: "[%{site_name}] Nová zpráva od %{name}"
           few: "[%{site_name}] Nové zprávy od %{name}"
           many: "[%{site_name}] Nové zprávy od %{name}"
           other: "[%{site_name}] Nové zprávy od %{name}"
         chat_dm_2: "[%{site_name}] Nové zprávy od %{name_1} a %{name_2}"
-        chat_dm_3_or_more: "[%{site_name}] Nové zprávy od %{name} a %{count} dalších"
         chat_channel_1:
           one: "[%{site_name}] Nová zpráva v %{channel}"
           few: "[%{site_name}] Nové zprávy v %{channel}"
           many: "[%{site_name}] Nové zprávy v %{channel}"
           other: "[%{site_name}] Nové zprávy v %{channel}"
         chat_channel_2: "[%{site_name}] Nové zprávy v %{channel_1} a %{channel_2}"
-        chat_channel_3_or_more: "[%{site_name}] Nové zprávy v %{channel} a %{count} dalších"
         chat_channel_and_dm: "[%{site_name}] Nové zprávy v %{channel} a od %{name}"
       unsubscribe: "Tento souhrn chatu je odeslán z %{site_link}, když jste pryč. Změňte %{email_preferences_link} nebo %{unsubscribe_link} pro odhlášení."
       unsubscribe_no_link: "Tento souhrn chatu je odesílán ze stránky %{site_link}, když jste pryč. Změňte svůj %{email_preferences_link}."

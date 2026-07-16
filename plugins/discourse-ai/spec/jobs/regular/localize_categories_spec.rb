@@ -13,7 +13,10 @@ describe Jobs::LocalizeCategories do
     assign_fake_provider_to(:ai_default_llm_model)
     enable_current_plugin
     SiteSetting.ai_translation_enabled = true
+    SiteSetting.default_locale = "pt_BR"
     SiteSetting.content_localization_supported_locales = "pt_BR|zh_CN"
+    SiteSetting.ai_translation_category_scope = "all"
+    SiteSetting.ai_translation_categories = ""
 
     Jobs.run_immediately!
   end
@@ -89,6 +92,7 @@ describe Jobs::LocalizeCategories do
   end
 
   it "limits the number of localizations" do
+    SiteSetting.default_locale = "pt"
     SiteSetting.content_localization_supported_locales = "pt"
 
     6.times { Fabricate(:category) }
@@ -133,6 +137,7 @@ describe Jobs::LocalizeCategories do
     localize_all_categories("pt", "zh_CN")
 
     category1 = Fabricate(:category, name: "First", description: "First description", locale: "en")
+
     DiscourseAi::Translation::CategoryLocalizer
       .expects(:localize)
       .with(
@@ -154,19 +159,19 @@ describe Jobs::LocalizeCategories do
     expect { job.execute({ limit: 10 }) }.not_to raise_error
   end
 
-  it "skips read-restricted categories when configured" do
-    SiteSetting.ai_translation_backfill_limit_to_public_content = true
-
-    category1 = Fabricate(:category, name: "Public Category", read_restricted: false, locale: "en")
-    category2 = Fabricate(:category, name: "Private Category", read_restricted: true, locale: "en")
+  it "does not translate categories excluded by the category scope" do
+    included = Fabricate(:category, locale: "en")
+    excluded = Fabricate(:category, locale: "en")
+    SiteSetting.ai_translation_category_scope = "exclude"
+    SiteSetting.ai_translation_categories = excluded.id.to_s
 
     DiscourseAi::Translation::CategoryLocalizer
       .expects(:localize)
-      .with(category1, any_parameters)
+      .with(included, any_parameters)
       .twice
     DiscourseAi::Translation::CategoryLocalizer
       .expects(:localize)
-      .with(category2, any_parameters)
+      .with(excluded, any_parameters)
       .never
 
     job.execute({ limit: 10 })

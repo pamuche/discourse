@@ -66,6 +66,9 @@
             "type": "string",
             "pattern": "^\\d{2}:\\d{2}:\\d{2}$"
           },
+          "all_day": {
+            "type": "boolean"
+          },
           "can_act_on_discourse_post_event": {
             "type": [
               "boolean",
@@ -202,6 +205,12 @@
               "null"
             ]
           },
+          "description_html": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "location": {
             "type": [
               "string",
@@ -223,6 +232,18 @@
           "channel": {
             "type": "object"
           },
+          "livestream": {
+            "type": "boolean"
+          },
+          "livestream_onebox": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_zoom_livestream": {
+            "type": "boolean"
+          },
           "max_attendees": {
             "type": [
               "integer",
@@ -231,6 +252,12 @@
           },
           "at_capacity": {
             "type": "boolean"
+          },
+          "image_upload": {
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "post": {
             "type": "object",
@@ -266,13 +293,17 @@
                   },
                   "tags_descriptions": {
                     "type": "object"
+                  },
+                  "slug": {
+                    "type": "string"
                   }
                 },
                 "required": [
                   "id",
                   "title",
                   "tags",
-                  "tags_descriptions"
+                  "tags_descriptions",
+                  "slug"
                 ]
               }
             },

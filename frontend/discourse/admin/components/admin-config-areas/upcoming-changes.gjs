@@ -1,17 +1,28 @@
 import Component from "@glimmer/component";
-import { array } from "@ember/helper";
-import { TrackedObject } from "@ember-compat/tracked-built-ins";
+import { cached } from "@glimmer/tracking";
+import { array, hash } from "@ember/helper";
+import { action } from "@ember/object";
+import { trackedObject } from "@ember/reactive/collections";
+import { service } from "@ember/service";
 import AdminConfigAreaEmptyList from "discourse/admin/components/admin-config-area-empty-list";
 import UpcomingChangeItem from "discourse/admin/components/admin-config-areas/upcoming-change-item";
-import AdminFilterControls from "discourse/admin/components/admin-filter-controls";
+import { AUTO_GROUPS } from "discourse/lib/constants";
+import DFilterControls from "discourse/ui-kit/d-filter-controls";
 import { i18n } from "discourse-i18n";
 
 export default class AdminConfigAreasUpcomingChanges extends Component {
+  @service site;
+
+  @cached
   get upcomingChanges() {
     return this.args.upcomingChanges.map((change) => {
-      change.upcoming_change = new TrackedObject(change.upcoming_change);
-      return new TrackedObject(change);
+      change.upcoming_change = trackedObject(change.upcoming_change);
+      return trackedObject(change);
     });
+  }
+
+  get staffGroupName() {
+    return this.site.groupsById[AUTO_GROUPS.staff.id].name;
   }
 
   get dropdownOptions() {
@@ -43,11 +54,6 @@ export default class AdminConfigAreasUpcomingChanges extends Component {
           value: "stable",
           filterFn: (change) => change.upcoming_change.status === "stable",
         },
-        {
-          label: i18n("admin.upcoming_changes.filter.status_permanent"),
-          value: "permanent",
-          filterFn: (change) => change.upcoming_change.status === "permanent",
-        },
       ],
       type: [
         {
@@ -66,6 +72,49 @@ export default class AdminConfigAreasUpcomingChanges extends Component {
           value: "other",
           filterFn: (change) => change.upcoming_change.impact_type === "other",
         },
+        {
+          label: i18n(
+            "admin.upcoming_changes.filter.impact_type_site_setting_default"
+          ),
+          value: "site_setting_default",
+          filterFn: (change) =>
+            change.upcoming_change.impact_type === "site_setting_default",
+        },
+      ],
+      impactRole: [
+        {
+          label: i18n("admin.upcoming_changes.filter.impact_role_all"),
+          value: "all",
+          filterFn: () => true,
+        },
+        {
+          label: i18n("admin.upcoming_changes.filter.impact_role_admins"),
+          value: "admins",
+          filterFn: (change) => change.upcoming_change.impact_role === "admins",
+        },
+        {
+          label: i18n("admin.upcoming_changes.filter.impact_role_moderators"),
+          value: "moderators",
+          filterFn: (change) =>
+            change.upcoming_change.impact_role === "moderators",
+        },
+        {
+          label: i18n("admin.upcoming_changes.filter.impact_role_staff"),
+          value: "staff",
+          filterFn: (change) => change.upcoming_change.impact_role === "staff",
+        },
+        {
+          label: i18n("admin.upcoming_changes.filter.impact_role_all_members"),
+          value: "all_members",
+          filterFn: (change) =>
+            change.upcoming_change.impact_role === "all_members",
+        },
+        {
+          label: i18n("admin.upcoming_changes.filter.impact_role_developers"),
+          value: "developers",
+          filterFn: (change) =>
+            change.upcoming_change.impact_role === "developers",
+        },
       ],
       enabled: [
         {
@@ -76,7 +125,22 @@ export default class AdminConfigAreasUpcomingChanges extends Component {
         {
           label: i18n("admin.upcoming_changes.filter.enabled"),
           value: "enabled",
-          filterFn: (change) => change.value,
+          filterFn: (change) =>
+            change.upcoming_change.enabled_for === "everyone",
+        },
+        {
+          label: i18n("admin.upcoming_changes.filter.enabled_for_staff", {
+            staffGroupName: this.staffGroupName,
+          }),
+          value: "enabled_for_staff",
+          filterFn: (change) => change.upcoming_change.enabled_for === "staff",
+        },
+        {
+          label: i18n(
+            "admin.upcoming_changes.filter.enabled_for_specific_groups"
+          ),
+          value: "enabled_for_specific_groups",
+          filterFn: (change) => change.upcoming_change.enabled_for === "groups",
         },
         {
           label: i18n("admin.upcoming_changes.filter.disabled"),
@@ -87,13 +151,21 @@ export default class AdminConfigAreasUpcomingChanges extends Component {
     };
   }
 
+  @action
+  enabledForChanged(changeSettingName, newEnabledFor) {
+    this.upcomingChanges.find(
+      (change) => change.setting === changeSettingName
+    ).upcoming_change.enabled_for = newEnabledFor;
+  }
+
   <template>
-    <AdminFilterControls
+    <DFilterControls
       @array={{this.upcomingChanges}}
       @searchableProps={{array
         "humanized_name"
         "description"
         "plugin_identifier"
+        "setting"
       }}
       @dropdownOptions={{this.dropdownOptions}}
       @inputPlaceholder={{i18n
@@ -101,6 +173,15 @@ export default class AdminConfigAreasUpcomingChanges extends Component {
       }}
       @noResultsMessage={{i18n
         "admin.upcoming_changes.filter.search_placeholder"
+      }}
+      @initialTextFilter={{@changeNamesFilter}}
+      @onResetFilters={{@onClearChangeNamesFilter}}
+      @textFilterQueryParam="changeNamesFilter"
+      @dropdownFilterQueryParams={{hash
+        status="status"
+        type="type"
+        impactRole="impactRole"
+        enabled="enabled"
       }}
     >
       <:content as |upcomingChanges|>
@@ -117,12 +198,15 @@ export default class AdminConfigAreasUpcomingChanges extends Component {
           </thead>
           <tbody class="d-table__body">
             {{#each upcomingChanges as |change|}}
-              <UpcomingChangeItem @change={{change}} />
+              <UpcomingChangeItem
+                @change={{change}}
+                @enabledForChanged={{@enabledForChanged}}
+              />
             {{/each}}
           </tbody>
         </table>
       </:content>
-    </AdminFilterControls>
+    </DFilterControls>
 
     {{#unless this.upcomingChanges}}
       <AdminConfigAreaEmptyList

@@ -1,8 +1,7 @@
-import EmberObject from "@ember/object";
+import EmberObject, { computed } from "@ember/object";
 import { Promise } from "rsvp";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
-import discourseComputed from "discourse/lib/decorators";
 import Badge from "discourse/models/badge";
 import Topic from "discourse/models/topic";
 import User from "discourse/models/user";
@@ -42,7 +41,7 @@ export default class UserBadge extends EmberObject {
     });
 
     // Create UserBadge object(s).
-    let userBadges = [];
+    let userBadges;
     if ("user_badge" in json) {
       userBadges = [json.user_badge];
     } else {
@@ -143,8 +142,8 @@ export default class UserBadge extends EmberObject {
     });
   }
 
-  @discourseComputed
-  postUrl() {
+  @computed
+  get postUrl() {
     if (this.topic_title) {
       return "/t/-/" + this.topic_id + "/" + this.post_number;
     }

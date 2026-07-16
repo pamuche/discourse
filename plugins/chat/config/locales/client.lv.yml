@@ -12,14 +12,20 @@ lv:
           always: "Vienmēr"
           never: "Nekad"
     chat:
+      edit_category:
+        description: "Apraksts"
+        actions: "Darbības"
+        settings: "Iestatījumi"
       deleted_chat_username: dzēsts
       dates:
         yesterday: "Vakar"
       create: "Izveidot"
       cancel: "Atcelt"
+      pinned: "Piesprausts"
       channel_settings:
         edit: "Rediģēt"
         add: "Pievienot"
+        notification_settings_context: "Paziņojumi"
         join: "Pievienojieties"
         leave: "Iziet"
       close: "Aizvērt"
@@ -73,6 +79,7 @@ lv:
         title: Jauns ziņa
         prefix: "Kam:"
       create_channel:
+        description: "Apraksts"
         type: "Tips"
         types:
           category: "Sadaļa"
@@ -156,3 +163,8 @@ lv:
           fields:
             message:
               label: Ziņa
+    discourse_workflows:
+      send_chat_message:
+        message: "Ziņa"
+      chat_approval:
+        message: "Ziņa"

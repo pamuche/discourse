@@ -12,14 +12,21 @@ ca:
           always: "Sempre"
           never: "Mai"
     chat:
+      edit_category:
+        channel: "Canal"
+        description: "Descripció"
+        actions: "Accions"
+        settings: "Configuració"
       deleted_chat_username: suprimit
       dates:
         yesterday: "Ahir"
       create: "Crea"
       cancel: "Cancel·la"
+      pinned: "Afixat"
       channel_settings:
         edit: "Edita"
         add: "Afegeix"
+        notification_settings_context: "Notificacions"
         join: "Registre"
         leave: "Abandona"
       close: "Tanca"
@@ -74,6 +81,7 @@ ca:
         title: Missatge nou
         prefix: "A:"
       create_channel:
+        description: "Descripció"
         type: "Tipus"
         types:
           category: "Categoria"
@@ -161,3 +169,12 @@ ca:
           fields:
             message:
               label: Missatge
+    discourse_workflows:
+      chat_message_created:
+        channel_id: "Canal"
+      send_chat_message:
+        channel_id: "Canal"
+        message: "Missatge"
+      chat_approval:
+        message: "Missatge"
+        channel_id: "Canal"

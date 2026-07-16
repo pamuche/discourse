@@ -4,7 +4,7 @@ import { withPluginApi } from "discourse/lib/plugin-api";
 import Category from "discourse/models/category";
 import { i18n } from "discourse-i18n";
 
-function initialize(api) {
+function extendCategory(api) {
   Category.reopen({
     enable_topic_voting: computed("custom_fields.enable_topic_voting", {
       get() {
@@ -20,7 +20,9 @@ function initialize(api) {
   api.addTrackedPostProperties("can_vote");
   api.addTagsHtmlCallback(
     (topic) => {
-      if (!topic.can_vote) {
+      const router = api.container.lookup("service:router");
+
+      if (!topic.can_vote || router.currentRouteName?.startsWith("topic.")) {
         return;
       }
 
@@ -39,9 +41,7 @@ function initialize(api) {
       buffer.push(i18n("topic_voting.votes", { count: topic.vote_count }));
       buffer.push("</a>");
 
-      if (buffer.length > 0) {
-        return buffer.join("");
-      }
+      return buffer.join("");
     },
     { priority: -100 }
   );
@@ -59,6 +59,7 @@ function initialize(api) {
     (Superclass) =>
       class extends Superclass {
         @tracked votes_exceeded;
+        @tracked vote_limit;
         @tracked votes_left;
       }
   );
@@ -70,7 +71,9 @@ export default {
   before: "inject-discourse-objects",
 
   initialize() {
-    withPluginApi((api) => initialize(api));
-    withPluginApi((api) => api.addCategorySortCriteria("votes"));
+    withPluginApi((api) => {
+      extendCategory(api);
+      api.addCategorySortCriteria("votes");
+    });
   },
 };

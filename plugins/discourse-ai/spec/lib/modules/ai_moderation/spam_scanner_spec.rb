@@ -185,6 +185,26 @@ RSpec.describe DiscourseAi::AiModeration::SpamScanner do
       SiteSetting.ai_spam_detection_enabled = false
       expect { described_class.new_post(post) }.not_to change(Jobs::AiSpamScan.jobs, :size)
     end
+
+    it "doesn't flag posts that were approved from the review queue" do
+      reviewable =
+        ReviewableQueuedPost.create!(
+          created_by: Discourse.system_user,
+          target_created_by: user,
+          topic_id: topic.id,
+          payload: {
+            raw: "This is a test post from the queue",
+          },
+        )
+
+      result = reviewable.perform(moderator, :approve_post)
+      approved_post = result.created_post
+
+      expect {
+        described_class.new_post(approved_post)
+        described_class.after_cooked_post(approved_post)
+      }.not_to change(Jobs::AiSpamScan.jobs, :size)
+    end
   end
 
   describe ".edited_post" do
@@ -217,11 +237,52 @@ RSpec.describe DiscourseAi::AiModeration::SpamScanner do
       }.to change(Jobs::AiSpamScan.jobs, :size).by(1)
     end
 
+    it "passes the editor id in the job args without persisting it on the post" do
+      editor = Fabricate(:user, trust_level: TrustLevel[0])
+      post.update!(last_editor_id: editor.id)
+      PostRevision.create!(
+        post: post,
+        user: editor,
+        modifications: {
+          raw: ["old content", "completely new content"],
+        },
+      )
+
+      described_class.edited_post(post)
+      described_class.after_cooked_post(post)
+
+      job_args = Jobs::AiSpamScan.jobs.last["args"].first
+      expect(post.reload.custom_fields).not_to have_key("discourse_ai_spam_scan_triggering_user_id")
+      expect(job_args["triggering_user_id"]).to eq(editor.id)
+    end
+
     it "does nothing when staff is the last revisor" do
       expect {
         PostRevisor.new(post).revise!(moderator, title: "#{post.topic.title} spam spam")
         described_class.after_cooked_post(post)
       }.not_to change(Jobs::AiSpamScan.jobs, :size)
+    end
+
+    it "does not create a reviewable when staff edits a topic" do
+      Jobs.run_immediately!
+
+      post = nil
+      DiscourseAi::Completions::Llm.with_prepared_responses(
+        [{ spam: false, reason: "no spam detected" }],
+      ) do
+        post =
+          create_post(
+            user: user,
+            title: "Topic to test AI spam flagging",
+            raw: "Initial content that will pass initial scan.",
+          )
+      end
+
+      DiscourseAi::Completions::Llm.with_prepared_responses(
+        [{ spam: true, reason: "spam detected" }],
+      ) { PostRevisor.new(post).revise!(moderator, title: "A completely different title") }
+
+      expect(Reviewable.where(target: post).count).to eq(0)
     end
   end
 
@@ -358,7 +419,30 @@ RSpec.describe DiscourseAi::AiModeration::SpamScanner do
       expect(post.user.reload.silenced?).to eq(false)
     end
 
-    it "does not silence the user or hide the post when a flag cannot be created" do
+    it "does not silence the author when another user adds spam to a wiki post" do
+      wiki_editor = Fabricate(:user, trust_level: TrustLevel[0])
+      wiki_post = Fabricate(:post, user: user, wiki: true, raw: "Helpful community wiki content")
+
+      DiscourseAi::Completions::Llm.with_prepared_responses(
+        [{ spam: true, reason: "spam detected" }],
+      ) do
+        PostRevisor.new(wiki_post).revise!(
+          wiki_editor,
+          raw: "Buy questionable products from this completely different wiki content",
+        )
+        wiki_post.rebake!
+      end
+
+      log = AiSpamLog.find_by(post: wiki_post)
+
+      expect(log.reviewable).to be_present
+      expect(wiki_post.user.reload).not_to be_silenced
+      expect(
+        UserHistory.where(action: UserHistory.actions[:silence_user], target_user_id: user.id),
+      ).to be_blank
+    end
+
+    it "skips posts already flagged by the scanner" do
       post = post_with_uploaded_image
       Fabricate(
         :post_action,
@@ -375,6 +459,51 @@ RSpec.describe DiscourseAi::AiModeration::SpamScanner do
         # force a rebake so we actually scan
         post.rebake!
       end
+
+      log = AiSpamLog.find_by(post: post)
+
+      expect(log.reviewable).to be_nil
+      expect(log.error).to eq("skipped because post already has a flag")
+      expect(post.user.reload).not_to be_silenced
+      expect(post.topic.reload).to be_visible
+    end
+
+    it "skips posts that already have an active flag" do
+      flagger = Fabricate(:user)
+      Fabricate(
+        :post_action,
+        post: post,
+        user: flagger,
+        post_action_type_id: PostActionType.types[:spam],
+      )
+
+      described_class.new_post(post)
+
+      expect do
+        DiscourseAi::Completions::Llm.with_prepared_responses(
+          [{ spam: true, reason: "spam detected" }],
+        ) { post.rebake! }
+      end.not_to change { PostAction.active.flags.where(post: post).count }
+
+      log = AiSpamLog.find_by(post: post)
+
+      expect(log.reviewable).to be_nil
+      expect(log.error).to eq("skipped because post already has a flag")
+      expect(post.user.reload).not_to be_silenced
+      expect(post.topic.reload).to be_visible
+    end
+
+    it "does not silence or hide when flag creation fails" do
+      flagging_user = Fabricate(:user, trust_level: TrustLevel[4])
+      SiteSetting.ai_spam_detection_user_id = flagging_user.id
+
+      described_class.new_post(post)
+
+      expect do
+        DiscourseAi::Completions::Llm.with_prepared_responses(
+          [{ spam: true, reason: "spam detected" }],
+        ) { post.rebake! }
+      end.not_to change { PostAction.active.flags.where(post: post).count }
 
       log = AiSpamLog.find_by(post: post)
 

@@ -16,6 +16,11 @@ pt:
           actions:
             chat_auto_remove_membership: "Assinaturas removidas automaticamente dos canais"
     chat:
+      edit_category:
+        channel: "Canal"
+        description: "Descrição"
+        actions: "Ações"
+        settings: "Configurações"
       deleted_chat_username: eliminado
       dates:
         yesterday: "Ontem"
@@ -27,6 +32,7 @@ pt:
       cancel: "Cancelar"
       cancel_reply: "Cancelar resposta"
       chat_channels: "Canais"
+      pinned: "Fixado"
       browse_all_channels: "Navegar todos os canais"
       move_to_channel:
         title: "Mover mensagens para o canal"
@@ -41,6 +47,7 @@ pt:
         delete_channel: "Apagar canal"
         join_channel: "Aderir ao canal"
         leave_channel: "Sair do canal"
+        notification_settings_context: "Notificações"
         join: "Entrar"
         leave: "Sair"
         save_label:
@@ -81,8 +88,6 @@ pt:
       join: "Entrar"
       last_visit: "última visita"
       no_public_channels_cta: "Navegar canais"
-      only_chat_push_notifications:
-        title: "Enviar notificações push apenas para chat"
       reply: "Responder"
       edit: "Editar"
       copy_link: "Copiar link"
@@ -90,7 +95,6 @@ pt:
       retry_staged_message:
         title: "Erro de rede"
         action: "Enviar novamente?"
-      unreliable_network: "A rede não é confiável. Enviar mensagens e salvar rascunhos poderá não funcionar"
       bookmark_message: "Adicionar Marcador"
       bookmark_message_edit: "Editar Favorito"
       restore: "Restaurar mensagem apagada"
@@ -103,7 +107,6 @@ pt:
         title: "Som de notificação de Chat na área de trabalho"
       sounds:
         none: "Nenhuma"
-        bell: "Sino"
       channel_status:
         archive_failed_no_topic: "O canal de arquivo falhou. %{completed}/%{total} mensagens foram arquivadas, o tópico de destino não foi criado. Clica Tentar de novo para tentar completar o arquivo."
         closed: "Fechado"
@@ -135,12 +138,11 @@ pt:
         filter: "Filtrar"
       channel_edit_name_slug_modal:
         input_placeholder: Adicionar um nome
-        slug: Slug do canal (opcional)
       direct_message_creator:
         title: Nova Mensagem
         prefix: "Para:"
       create_channel:
-        slug: "Slug do canal (opcional)"
+        description: "Descrição"
         title: "Novo canal"
         type: "Tipo"
         types:
@@ -244,3 +246,12 @@ pt:
       start_new_dm:
         text: Iniciar novo DM
         title: Criar uma conversação pessoal
+    discourse_workflows:
+      chat_message_created:
+        channel_id: "Canal"
+      send_chat_message:
+        channel_id: "Canal"
+        message: "Mensagem"
+      chat_approval:
+        message: "Mensagem"
+        channel_id: "Canal"

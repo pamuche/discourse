@@ -27,14 +27,12 @@ module Jobs
       return if tags.empty?
 
       tags.each do |tag|
-        begin
-          DiscourseAi::Translation::TagLocaleDetector.detect_locale(tag)
-        rescue FinalDestination::SSRFDetector::LookupFailedError
-        rescue => e
-          DiscourseAi::Translation::VerboseLogger.log(
-            "Failed to detect tag #{tag.id}'s locale: #{e.message}\n\n#{e.backtrace[0..3].join("\n")}",
-          )
-        end
+        DiscourseAi::Translation::TagLocaleDetector.detect_locale(tag)
+      rescue FinalDestination::SSRFDetector::LookupFailedError
+      rescue => e
+        DiscourseAi::Translation::VerboseLogger.log(
+          "Failed to detect tag #{tag.id}'s locale: #{e.message}\n\n#{e.backtrace[0..3].join("\n")}",
+        )
       end
 
       DiscourseAi::Translation::VerboseLogger.log("Detected #{tags.size} tag locales")
@@ -43,11 +41,10 @@ module Jobs
     private
 
     def find_llm_model
-      persona_klass =
-        AiPersona.find_by_id_from_cache(SiteSetting.ai_translation_locale_detector_persona)
-      return nil if persona_klass.blank?
+      agent_klass = AiAgent.find_by_id_from_cache(SiteSetting.ai_translation_locale_detector_agent)
+      return nil if agent_klass.blank?
 
-      DiscourseAi::Translation::BaseTranslator.preferred_llm_model(persona_klass)
+      DiscourseAi::Translation::BaseTranslator.preferred_llm_model(agent_klass)
     end
   end
 end

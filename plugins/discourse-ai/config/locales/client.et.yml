@@ -34,8 +34,17 @@ et:
             canned_reply:
               label: "Vasta"
     discourse_ai:
+      ai_tool_approval:
+        loading: "Laadimine..."
+        tool: "Tegevus"
+        user: "Kasutaja"
+        approve: "Kinnita"
+        reject: "Lükka tagasi"
+        approved: "Heakskiidetud"
+        rejected: "Tagasi lükatud"
+      llm_selector:
+        none: "Pole"
       features:
-        back: "Tagasi"
         disabled: "(välja lülitatud)"
         groups: "Rühmad:"
         no_groups: "Pole"
@@ -43,16 +52,22 @@ et:
         expand_list:
           one: "(veel %{count})"
           other: "(veel %{count})"
+        nav:
+          enabled: "Sisse lülitatud"
         filters:
           all: "Kõik"
           reset: "Nulli"
         search:
           name: "Otsi"
+        image_caption:
+          setting_groups:
+            settings: "Seaded"
         spam:
           name: "Spämm"
       modals:
         select_option: "Vali võimalus..."
       translations:
+        category_scope: "Liigid"
         stats:
           eta_minutes:
             one: "%{count} minut"
@@ -77,8 +92,7 @@ et:
         username: "Kasutajanimi"
         total_requests: "Kokku päringuid"
         total: "Kokku"
-      ai_persona:
-        back: "Tagasi"
+      ai_agent:
         name: "Nimi"
         edit: "Muuda"
         export: "Ekspordi"
@@ -88,6 +102,11 @@ et:
         save: "Salvesta"
         enabled: "Sisse lülitatud?"
         delete: "Kustuta"
+        thinking_effort_options:
+          none: "Pole"
+          medium: "Keskmine"
+          high: "Kõrge"
+          max: "Maksimum"
         response_format:
           open_modal: "Muuda"
         filters:
@@ -97,7 +116,6 @@ et:
           title: "Üleslaadimised"
           uploading: "Laen üles..."
       tools:
-        back: "Tagasi"
         export: "Ekspordi"
         import: "Impordi"
         name: "Nimi"
@@ -107,13 +125,31 @@ et:
         remove_parameter: "Eemalda"
         parameter_required: "Nõutud"
         edit: "Muuda"
+        test: "Proovi"
         delete: "Kustuta"
+      secrets:
+        name: "Nimi"
+        secret: "Väärtus"
+        save: "Salvesta"
+        edit: "Muuda"
+        delete: "Kustuta"
+        embedding: "Sängitamine"
+      mcp_servers:
+        name: "Nimi"
+        description: "Kirjeldus"
+        url: "URL"
+        oauth_connect: "Ühenda"
+        enabled: "Sisse lülitatud"
+        save: "Salvesta"
+        edit: "Muuda"
+        delete: "Kustuta"
+        tools_modal:
+          required: "Nõutud"
       llms:
         display_name: "Nimi"
         provider: "Teenusepakkuja"
         save: "Salvesta"
         edit: "Muuda"
-        back: "Tagasi"
         delete: Kustuta
         quotas:
           group: "Rühm"
@@ -142,10 +178,7 @@ et:
           cancel: "Loobu"
         thumbnail_suggestions:
           try_again: "Proovi uuesti"
-        image_caption:
-          save_caption: "Salvesta"
       embeddings:
-        back: "Tagasi"
         save: "Salvesta"
         delete: "Kustuta"
         edit: "Muuda"

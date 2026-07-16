@@ -18,14 +18,27 @@ class TopicsFilter
   }
   private_constant :FILTER_ALIASES
 
+  # Shared pattern for matching quoted values (single or double quotes)
+  QUOTED_VALUE_PATTERN = '"[^"]*"|\'[^\']*\''
+  private_constant :QUOTED_VALUE_PATTERN
+
+  # Pattern for extracting filter components: prefix, key, and value (supports quoted values)
+  FILTER_EXTRACTION_PATTERN =
+    /(?<key_prefix>(?:-|=|-=|=-))?(?<key>[\w-]+):(?<value>#{QUOTED_VALUE_PATTERN}|[^\s]+)/
+  private_constant :FILTER_EXTRACTION_PATTERN
+
+  # Pattern for tokenizing query string while preserving quoted values and filter:value pairs
+  # Note: wrap QUOTED_VALUE_PATTERN in non-capturing group to preserve alternation precedence
+  TOKENIZER_PATTERN =
+    /[\w-]+:(?:#{QUOTED_VALUE_PATTERN})|[\w-]+:[^\s]+|(?:#{QUOTED_VALUE_PATTERN})|[^\s]+/
+  private_constant :TOKENIZER_PATTERN
+
   def filter_from_query_string(query_string)
     return @scope if query_string.blank?
 
     filters = {}
 
-    query_string.scan(
-      /(?<key_prefix>(?:-|=|-=|=-))?(?<key>[\w-]+):(?<value>[^\s]+)/,
-    ) do |key_prefix, key, value|
+    query_string.scan(FILTER_EXTRACTION_PATTERN) do |key_prefix, key, value|
       key = FILTER_ALIASES[key] || key
 
       filters[key] ||= {}
@@ -45,6 +58,10 @@ class TopicsFilter
         filter_by_activity(before: filter_values)
       when "activity-after"
         filter_by_activity(after: filter_values)
+      when "bookmarked-after"
+        filter_by_bookmarked(after: filter_values)
+      when "bookmarked-before"
+        filter_by_bookmarked(before: filter_values)
       when "category"
         filter_categories(values: key_prefixes.zip(filter_values))
       when "created-after"
@@ -72,7 +89,7 @@ class TopicsFilter
       when "users"
         filter_users(values: key_prefixes.zip(filter_values))
       when "group"
-        filter_groups(values: filter_values)
+        filter_groups(values: key_prefixes.zip(filter_values))
       when "posts-min"
         filter_by_number_of_posts(min: filter_values)
       when "posts-max"
@@ -94,14 +111,19 @@ class TopicsFilter
       when "views-max"
         filter_by_number_of_views(max: filter_values)
       else
-        if custom_filter = DiscoursePluginRegistry.custom_filter_mappings.find { _1.key?(filter) }
+        if custom_filter = DiscoursePluginRegistry.custom_filter_mappings.find { it.key?(filter) }
           @scope = custom_filter[filter].call(@scope, filter_values, @guardian) || @scope
         end
       end
     end
 
+    # Tokenize while preserving quoted values, then extract keywords (non-filter terms)
     keywords =
-      query_string.split(/\s+/).reject { |word| word.include?(":") }.map(&:strip).reject(&:empty?)
+      query_string
+        .scan(TOKENIZER_PATTERN)
+        .reject { |word| word.include?(":") }
+        .map(&:strip)
+        .reject(&:empty?)
 
     if keywords.present? && keywords.join(" ").length >= SiteSetting.min_search_term_length
       ts_query = Search.ts_query(term: keywords.join(" "))
@@ -146,6 +168,10 @@ class TopicsFilter
       end
     when "public"
       @scope = @scope.joins(:category).where("NOT categories.read_restricted")
+    when "noreplies"
+      @scope = @scope.where("topics.posts_count = 1")
+    when "single_user"
+      @scope = @scope.where("topics.participant_count = 1")
     else
       if custom_filter = TopicsFilter.custom_status_filters[status]
         @scope = custom_filter[:block].call(@scope) if custom_filter[:enabled].call
@@ -255,6 +281,8 @@ class TopicsFilter
       { name: "status:unlisted", description: I18n.t("filter.description.status_unlisted") },
       { name: "status:deleted", description: I18n.t("filter.description.status_deleted") },
       { name: "status:public", description: I18n.t("filter.description.status_public") },
+      { name: "status:noreplies", description: I18n.t("filter.description.status_noreplies") },
+      { name: "status:single_user", description: I18n.t("filter.description.status_single_user") },
       { name: "order:", description: I18n.t("filter.description.order"), priority: 1 },
       { name: "order:activity", description: I18n.t("filter.description.order_activity") },
       { name: "order:activity-asc", description: I18n.t("filter.description.order_activity_asc") },
@@ -289,6 +317,16 @@ class TopicsFilter
           { name: "in:", description: I18n.t("filter.description.in"), priority: 1 },
           { name: "in:pinned", description: I18n.t("filter.description.in_pinned") },
           { name: "in:bookmarked", description: I18n.t("filter.description.in_bookmarked") },
+          {
+            name: "bookmarked-before:",
+            description: I18n.t("filter.description.bookmarked_before"),
+            type: "date",
+          },
+          {
+            name: "bookmarked-after:",
+            description: I18n.t("filter.description.bookmarked_after"),
+            type: "date",
+          },
           { name: "in:watching", description: I18n.t("filter.description.in_watching") },
           { name: "in:tracking", description: I18n.t("filter.description.in_tracking") },
           { name: "in:muted", description: I18n.t("filter.description.in_muted") },
@@ -338,6 +376,7 @@ class TopicsFilter
         description: I18n.t("filter.description.group"),
         type: "group",
         priority: 1,
+        prefixes: [{ name: "-", description: I18n.t("filter.description.exclude_group") }],
         delimiters: [
           { name: ",", description: I18n.t("filter.description.groups_any") },
           { name: "+", description: I18n.t("filter.description.groups_all") },
@@ -368,8 +407,8 @@ class TopicsFilter
 
   def extract_and_validate_value_for(filter, values)
     case filter
-    when "activity-before", "activity-after", "created-before", "created-after",
-         "latest-post-before", "latest-post-after"
+    when "activity-before", "activity-after", "bookmarked-before", "bookmarked-after",
+         "created-before", "created-after", "latest-post-before", "latest-post-after"
       value = values.last
 
       if match_data = value.match(YYYY_MM_DD_REGEXP)
@@ -396,10 +435,11 @@ class TopicsFilter
   end
 
   def filter_by_topic_range(column_name:, min: nil, max: nil, scope: nil)
-    { min => ">=", max => "<=" }.each do |value, operator|
-      next if !value
-      @scope = (scope || @scope).where("#{column_name} #{operator} ?", value)
-    end
+    return @scope if min.nil? && max.nil?
+
+    value = min || max
+    operator = min ? ">=" : "<="
+    @scope = (scope || @scope).where("#{column_name} #{operator} ?", value)
   end
 
   def filter_by_activity(before: nil, after: nil)
@@ -408,6 +448,33 @@ class TopicsFilter
 
   def filter_by_created(before: nil, after: nil)
     filter_by_topic_range(column_name: "topics.created_at", min: after, max: before)
+  end
+
+  def filter_by_bookmarked(before: nil, after: nil)
+    return @scope = @scope.none if !@guardian.authenticated?
+    return @scope if before.nil? && after.nil?
+
+    user_id = @guardian.user.id.to_i
+    value = before || after
+    date_comparison = before ? :lteq : :gteq
+    bookmarks_table = Bookmark.arel_table
+
+    topic_bookmarks =
+      Bookmark
+        .where(user_id: user_id, bookmarkable_type: "Topic")
+        .where(bookmarks_table[:created_at].public_send(date_comparison, value))
+        .select(:bookmarkable_id)
+
+    post_bookmarks =
+      Bookmark
+        .joins(
+          "INNER JOIN posts ON posts.id = bookmarks.bookmarkable_id AND posts.deleted_at IS NULL",
+        )
+        .where(user_id: user_id, bookmarkable_type: "Post")
+        .where(bookmarks_table[:created_at].public_send(date_comparison, value))
+        .select("posts.topic_id")
+
+    @scope = @scope.where(id: topic_bookmarks).or(@scope.where(id: post_bookmarks))
   end
 
   def filter_by_latest_post(before: nil, after: nil)
@@ -431,7 +498,7 @@ class TopicsFilter
       column_name: "first_posts.like_count",
       min:,
       max:,
-      scope: self.joins_first_posts(@scope),
+      scope: joins_first_posts(@scope),
     )
   end
 
@@ -527,8 +594,10 @@ class TopicsFilter
 
   # group:staff,moderators => any of the groups have participation
   # group:staff+moderators => both groups have participation
+  # -group:staff,moderators => none of the groups have participation
+  # -group:staff+moderators => at least one of the groups has no participation
   def filter_groups(values:)
-    values.each do |value|
+    values.each do |prefix, value|
       require_all, group_names = calculate_all_or_any(value)
 
       if group_names.empty?
@@ -544,32 +613,44 @@ class TopicsFilter
           .pluck(:id)
 
       if group_ids.empty?
-        @scope = @scope.none
+        @scope = @scope.none if prefix != "-"
         next
       end
 
       if require_all
         if group_ids.length < group_names.length
-          @scope = @scope.none
+          @scope = @scope.none if prefix != "-"
           next
         end
 
-        group_ids.each_with_index { |gid, idx| @scope = @scope.where(<<~SQL) }
+        exists_clauses = group_ids.each_with_index.map { |gid, idx| <<~SQL }
             EXISTS (
               SELECT 1
               FROM posts pg#{idx}
               JOIN group_users gu#{idx} ON gu#{idx}.user_id = pg#{idx}.user_id
-              WHERE pg#{idx}.topic_id = topics.id AND gu#{idx}.group_id = #{gid} #{whisper_condition("pg#{idx}")}
+              WHERE pg#{idx}.topic_id = topics.id
+              AND pg#{idx}.deleted_at IS NULL
+              AND gu#{idx}.group_id = #{gid}
+              #{whisper_condition("pg#{idx}")}
             )
           SQL
+
+        if prefix == "-"
+          @scope = @scope.where("NOT (#{exists_clauses.join(" AND ")})")
+        else
+          exists_clauses.each { |exists_clause| @scope = @scope.where(exists_clause) }
+        end
       else
-        @scope = @scope.where(<<~SQL, group_ids: group_ids)
-              topics.id IN (
-                SELECT DISTINCT p.topic_id
+        not_sql = prefix == "-" ? "NOT" : ""
+        @scope = @scope.where(<<~SQL, group_ids:)
+              #{not_sql} EXISTS (
+                SELECT 1
                 FROM posts p
                 JOIN group_users gu ON gu.user_id = p.user_id
-                WHERE gu.group_id IN (:group_ids)
-                  #{whisper_condition("p")}
+                WHERE p.topic_id = topics.id
+                AND gu.group_id IN (:group_ids)
+                AND p.deleted_at IS NULL
+                #{whisper_condition("p")}
               )
             SQL
       end
@@ -829,30 +910,21 @@ class TopicsFilter
     category_ids
   end
 
-  # Accepts an array of tag names and returns an array of tag ids and the tag ids of aliases for the tag names which the user can see.
-  # If a block is given, it will be called with the tag ids and alias tag ids as arguments.
+  # Accepts an array of tag names and returns an array of resolved tag IDs.
+  # Synonym tags are resolved to their target tag ID.
   def tag_ids_from_tag_names(tag_names)
-    tag_ids, alias_tag_ids =
-      DiscourseTagging
-        .filter_visible(Tag, @guardian)
-        .where_name(tag_names)
-        .pluck(:id, :target_tag_id)
-        .transpose
-
-    tag_ids ||= []
-    alias_tag_ids ||= []
-
-    yield(tag_ids, alias_tag_ids) if block_given?
-
-    all_tag_ids = tag_ids.concat(alias_tag_ids)
-    all_tag_ids.compact!
-    all_tag_ids.uniq!
-    all_tag_ids
+    DiscourseTagging
+      .filter_visible(Tag, @guardian)
+      .where_name(tag_names)
+      .pluck(:id, :target_tag_id)
+      .map { |id, target_id| target_id || id }
+      .uniq
   end
 
   def filter_tag_groups(values:)
-    values.each do |key_prefix, tag_groups|
-      tag_group_ids = TagGroup.visible(@guardian).where(name: tag_groups).pluck(:id)
+    values.each do |key_prefix, tag_groups_value|
+      tag_group_name = strip_quotes(tag_groups_value)
+      tag_group_ids = TagGroup.visible(@guardian).where_name(tag_group_name).pluck(:id)
       exclude_clause = "NOT" if key_prefix == "-"
       filter =
         "tags.id #{exclude_clause} IN (SELECT tag_id FROM tag_group_memberships WHERE tag_group_id IN (?))"
@@ -871,6 +943,10 @@ class TopicsFilter
     end
   end
 
+  def strip_quotes(value)
+    value.gsub(/\A["']|["']\z/, "")
+  end
+
   def filter_tags(values:)
     return if !SiteSetting.tagging_enabled?
 
@@ -878,14 +954,9 @@ class TopicsFilter
       break if key_prefix && key_prefix != "-"
 
       value.scan(
-        /\A(?<tag_names>([\p{N}\p{L}\-_]+)(?<delimiter>[,+])?([\p{N}\p{L}\-]+)?(\k<delimiter>[\p{N}\p{L}\-]+)*)\z/,
+        /\A(?<tag_names>([\p{N}\p{L}\-_.]+)(?<delimiter>[,+])?([\p{N}\p{L}\-_.]+)?(\k<delimiter>[\p{N}\p{L}\-_.]+)*)\z/,
       ) do |tag_names, delimiter|
-        match_all =
-          if delimiter == ","
-            false
-          else
-            true
-          end
+        match_all = delimiter != ","
 
         tags = tag_names.split(delimiter)
         tag_ids = tag_ids_from_tag_names(tags)

@@ -36,6 +36,35 @@ RSpec.describe Admin::BadgesController do
 
       include_examples "badges inaccessible"
     end
+
+    context "with an API key scoped to badges -> list" do
+      it "allows an admin's key to list badges" do
+        api_key = Fabricate(:api_key, user: admin)
+        Fabricate(:api_key_scope, resource: "badges", action: "list", api_key_id: api_key.id)
+
+        get "/admin/badges.json",
+            headers: {
+              "HTTP_API_KEY" => api_key.key,
+              "HTTP_API_USERNAME" => admin.username,
+            }
+
+        expect(response.status).to eq(200)
+        expect(response.parsed_body["badges"]).to be_present
+      end
+
+      it "denies a non-admin's key, since the admin route stays admin-only" do
+        api_key = Fabricate(:api_key, user: user)
+        Fabricate(:api_key_scope, resource: "badges", action: "list", api_key_id: api_key.id)
+
+        get "/admin/badges.json",
+            headers: {
+              "HTTP_API_KEY" => api_key.key,
+              "HTTP_API_USERNAME" => user.username,
+            }
+
+        expect(response.status).to eq(404)
+      end
+    end
   end
 
   describe "#preview" do
@@ -300,6 +329,24 @@ RSpec.describe Admin::BadgesController do
             action: UserHistory.actions[:change_badge],
           ).exists?,
         ).to eq(true)
+      end
+
+      it "does not allow changing the system flag on a system badge" do
+        editor_badge = Badge.find(Badge::Editor)
+
+        put "/admin/badges/#{editor_badge.id}.json", params: { system: "false" }
+
+        expect(response.status).to eq(200)
+        editor_badge.reload
+        expect(editor_badge.system?).to eq(true)
+      end
+
+      it "does not allow setting the system flag on a custom badge" do
+        put "/admin/badges/#{badge.id}.json", params: { system: "true" }
+
+        expect(response.status).to eq(200)
+        badge.reload
+        expect(badge.system?).to eq(false)
       end
 
       it "does not allow query updates if badge_sql is disabled" do

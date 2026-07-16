@@ -44,6 +44,12 @@ ug:
           one: "%{formatted_number} سۆھبەت ئۇچۇرى"
           other: "%{formatted_number} سۆھبەت ئۇچۇرى"
     chat:
+      edit_category:
+        tab_title: "سۆھبەت"
+        channel: "قانال"
+        description: "چۈشەندۈرۈش"
+        actions: "مەشغۇلات"
+        settings: "تەڭشەك"
       text_copied: تېكىست چاپلاش تاختىسىغا كۆچۈرۈلدى
       link_copied: ئۇلانما چاپلاش تاختىسىغا كۆچۈرۈلدى
       back_to_forum: "مۇنبەر"
@@ -59,6 +65,7 @@ ug:
       cancel_reply: "جاۋابتىن ۋازكەچ"
       chat_channels: "قانال"
       starred: "يۇلتۇزلانغان"
+      pinned: "چوققىلاندى"
       browse_all_channels: "بارلىق قانالغا كۆز يۈگۈرتىدۇ"
       see_in: "قاراڭ"
       move_to_channel:
@@ -82,6 +89,7 @@ ug:
         join_channel: "قانالغا قوشۇلۇڭ"
         leave_channel: "قانالدىن ئايرىل"
         leave_groupchat_info: "بۇ گۇرۇپپا سۆھبىتىدىن ئايرىلسىڭىز، ئەمدى ئۇنى زىيارەت قىلالمايسىز ھەمدە ئۇنىڭغا ئائىت ئۇقتۇرۇشلارنى تاپشۇرۇۋالمايسىز. گۇرۇپپىغا قايتا قوشۇلۇش ئۈچۈن، سۆھبەت گۇرۇپپىسىنىڭ ئەزاسى سىزگە قايتا تەكلىپ ئەۋەتىشى كېرەك."
+        notification_settings_context: "ئۇقتۇرۇش"
         join: "قوشۇل"
         leave: "ئايرىل"
         save_label:
@@ -238,8 +246,6 @@ ug:
       no_public_channels_cta: "قانالغا كۆز يۈگۈرت"
       kicked_from_channel: "ئەمدى بۇ قانالنى زىيارەت قىلالمايسىز."
       chat_notifications_title: "سۆھبەت ئۇقتۇرۇشى"
-      only_chat_push_notifications:
-        title: "پەقەت سۆھبەت تارقىتىش ئۇقتۇرۇشىنىلا ئەۋەتىدۇ"
       ignore_channel_wide_mention:
         title: "قانال دائىرىسىدە ئاتاشقا پەرۋا قىلمايدۇ"
       show_thread_title_prompts:
@@ -270,7 +276,6 @@ ug:
       retry_staged_message:
         title: "تور خاتالىقى"
         action: "قايتا يوللامدۇ؟"
-      unreliable_network: "تور مۇقىم ئەمەس، ئۇچۇر يوللاش ۋە دەسلەپكى نۇسخىدا ساقلاش ئىشلىمەسلىكى مۇمكىن"
       bookmark_message: "خەتكۈچ"
       bookmark_message_edit: "خەتكۈچ تەھرىر"
       restore: "ئۆچۈرۈلگەن ئۇچۇرنى ئەسلىگە قايتۇر"
@@ -288,8 +293,6 @@ ug:
         title: "ئۈستەل يۈزى سۆھبەت ئۇقتۇرۇشىنىڭ ئاۋازى"
       sounds:
         none: "يوق"
-        bell: "قوڭغۇراق"
-        ding: "دىڭ"
       title: "سۆھبەت"
       title_capitalized: "سۆھبەت"
       upload: "ھۆججەت يۈكلە"
@@ -366,7 +369,6 @@ ug:
         input_placeholder: ئات قوش
         slug_description: تور ئادرېسىدا قانال ئىسمىنى ئىشلەتمەي قانال قىسقارتىلما ئىشلىتىدۇ
         name: قانال ئىسمى
-        slug: قانال قىسقارتىلمىسى (تاللاشچان)
       channel_edit_description_modal:
         title: چۈشەندۈرۈش تەھرىر
         input_placeholder: چۈشەندۈرۈش قوش
@@ -423,9 +425,8 @@ ug:
             one: '%{group} ۋە باشقا %{count} گۇرۇپپىدىكى ئىشلەتكۈچى <a href="%{settingLink}" target="_blank">بىخەتەرلىك تەڭشىكى</a> گە ئاساسەن بۇ قانالنى زىيارەت قىلىدۇ'
             other: '%{group} ۋە باشقا %{count} گۇرۇپپىدىكى ئىشلەتكۈچى <a href="%{settingLink}" target="_blank">بىخەتەرلىك تەڭشىكى</a> گە ئاساسەن بۇ قانالنى زىيارەت قىلىدۇ'
         create: "قانال قۇر"
-        description: "چۈشەندۈرۈش (تاللاشچان)"
+        description: "چۈشەندۈرۈش"
         name: "قانال ئىسمى"
-        slug: "قانال قىسقارتىلمىسى (تاللاشچان)"
         title: "يېڭى قانال"
         type: "تىپى"
         types:
@@ -581,13 +582,9 @@ ug:
           other: "%{commaSeparatedUsernames} ۋە باشقا %{count} كىشى يېزىۋاتىدۇ"
       retention_reminders:
         indefinitely_short: "مۇددەتسىز"
-        indefinitely_long: "سۆھبەت تەڭشەكلىرى قانال ئۇچۇرلىرىنى مۇددەتسىز ساقلاپ قېلىشقا تەڭشەلدى."
         short:
           one: "%{count} كۈن"
           other: "%{count} كۈن"
-        long:
-          one: "سۆھبەت تەڭشەكلىرى قانال ئۇچۇرلىرىنى %{count} كۈن ساقلاپ قېلىشقا تەڭشەلدى."
-          other: "سۆھبەت تەڭشەكلىرى قانال ئۇچۇرلىرىنى %{count} كۈن ساقلاپ قېلىشقا تەڭشەلدى."
       flags:
         off_topic: "بۇ ئۇچۇر بىلەن قانال ماۋزۇسىدا بەلگىلەنگەن نۆۋەتتىكى سۆھبەت بىلەن مۇناسىۋەتسىز، باشقا جايغا يۆتكەش لازىم بولۇشى مۇمكىن."
         inappropriate: "ئەقىللىق ئادەم بۇ ئۇچۇردا ھۇجۇم، ھاقارەت ياكى <a href=\"%{basePath}/guidelines\">جامائەت مىزانىمىز</a>غا خىلاپ مەزمۇن بار دەپ قارايدۇ."
@@ -719,7 +716,6 @@ ug:
           composer_bold: "%{shortcut} توم (كىرگۈزۈش كۆزنىكىلا)"
           composer_italic: "%{shortcut} يانتۇ (كىرگۈزۈش كۆزنىكىلا)"
           composer_code: "%{shortcut} كود (كىرگۈزۈش كۆزنىكىلا)"
-          drawer_open: "%{shortcut} سۆھبەت تارتمىسىنى ئاچ"
           drawer_close: "%{shortcut} سۆھبەت تارتمىسىنى ياپ"
           mark_all_channels_read: "%{shortcut} ھەممە قانالغا ئوقۇلدى بەلگىسى سال"
     topic_statuses:
@@ -751,3 +747,14 @@ ug:
       panels:
         chat:
           label: "سۆھبەت"
+    discourse_workflows:
+      nodes:
+        "action:send_chat_message": "سۆھبەت ئۇچۇرى يوللا"
+      chat_message_created:
+        channel_id: "قانال"
+      send_chat_message:
+        channel_id: "قانال"
+        message: "ئۇچۇر"
+      chat_approval:
+        message: "ئۇچۇر"
+        channel_id: "قانال"

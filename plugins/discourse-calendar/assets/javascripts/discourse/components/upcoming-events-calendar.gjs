@@ -3,20 +3,44 @@ import { action } from "@ember/object";
 import { schedule } from "@ember/runloop";
 import { service } from "@ember/service";
 import moment from "moment";
-import getURL from "discourse/lib/get-url";
 import Category from "discourse/models/category";
 import { i18n } from "discourse-i18n";
-import { formatEventName } from "../helpers/format-event-name";
 import { normalizeViewForRoute } from "../lib/calendar-view-helper";
-import { isNotFullDayEvent } from "../lib/guess-best-date-format";
+import formatEventForCalendar from "../lib/format-event-for-calendar";
+import openEventComposer from "../lib/open-event-composer";
 import FullCalendar from "./full-calendar";
 
 export default class UpcomingEventsCalendar extends Component {
+  @service composer;
   @service currentUser;
   @service router;
   @service capabilities;
   @service siteSettings;
   @service discoursePostEventService;
+
+  get canCreateEvent() {
+    if (!this.currentUser) {
+      return false;
+    }
+
+    return (
+      this.currentUser.can_create_discourse_post_event &&
+      this.currentUser.can_create_topic
+    );
+  }
+
+  @action
+  async onDateClick(info) {
+    await openEventComposer({
+      composer: this.composer,
+      currentUser: this.currentUser,
+      siteSettings: this.siteSettings,
+      info,
+      category: this.args.categoryId
+        ? (Category.findById(this.args.categoryId) ?? null)
+        : null,
+    });
+  }
 
   get customButtons() {
     return {
@@ -51,50 +75,40 @@ export default class UpcomingEventsCalendar extends Component {
 
   @action
   async loadEvents(info) {
-    const events = await this.discoursePostEventService.fetchEvents({
+    const params = {
       after: info.startStr,
       before: info.endStr,
+      include_ongoing: true,
       attending_user: this.args.mine ? this.currentUser?.username : null,
-    });
+    };
 
-    const tagsColorsMap = JSON.parse(this.siteSettings.map_events_to_color);
+    if (this.args.categoryId) {
+      params.category_id = this.args.categoryId;
+    }
 
-    return events.map((event) => {
-      const { startsAt, endsAt, post, categoryId } = event;
+    if (this.args.includeSubcategories !== undefined) {
+      params.include_subcategories = this.args.includeSubcategories;
+    }
 
-      let backgroundColor;
+    const events = await this.discoursePostEventService.fetchEvents(params);
 
-      if (post?.topic?.tags) {
-        const tagColorEntry = tagsColorsMap.find(
-          (entry) =>
-            entry.type === "tag" && post.topic.tags.includes(entry.slug)
-        );
-        backgroundColor = tagColorEntry?.color;
-      }
+    const timezone = this.currentUser?.user_option?.timezone;
 
-      if (!backgroundColor) {
-        const categoryColorEntry = tagsColorsMap.find(
-          (entry) =>
-            entry.type === "category" && entry.slug === post?.category_slug
-        );
-        backgroundColor = categoryColorEntry?.color;
-      }
+    return events.map((event) =>
+      formatEventForCalendar(
+        event,
+        this.siteSettings.map_events_to_color,
+        timezone
+      )
+    );
+  }
 
-      const categoryColor = Category.findById(categoryId)?.color;
-      if (!backgroundColor && categoryColor) {
-        backgroundColor = `#${categoryColor}`;
-      }
-
-      return {
-        extendedProps: { postEvent: event },
-        title: formatEventName(event, this.currentUser?.user_option?.timezone),
-        start: startsAt,
-        end: endsAt || startsAt,
-        allDay: !isNotFullDayEvent(moment(startsAt), moment(endsAt)),
-        url: getURL(`/t/-/${post?.topic?.id}/${post?.post_number}`),
-        backgroundColor,
-      };
-    });
+  get refreshKey() {
+    return [
+      this.currentUser?.id,
+      this.args.categoryId,
+      this.args.includeSubcategories,
+    ].join("-");
   }
 
   get leftHeaderToolbar() {
@@ -132,6 +146,10 @@ export default class UpcomingEventsCalendar extends Component {
   @action
   async onDatesChange(info) {
     this.applyCustomButtonsState();
+
+    if (this.args.updateRouteOnDatesChange === false) {
+      return;
+    }
 
     const localDate = moment(info.view.currentStart)
       .clone()
@@ -172,13 +190,14 @@ export default class UpcomingEventsCalendar extends Component {
       <FullCalendar
         @initialDate={{@initialDate}}
         @onDatesChange={{this.onDatesChange}}
+        @onDateClick={{if this.canCreateEvent this.onDateClick}}
         @onLoadEvents={{this.loadEvents}}
         @initialView={{@initialView}}
         @customButtons={{this.customButtons}}
         @leftHeaderToolbar={{this.leftHeaderToolbar}}
         @centerHeaderToolbar={{this.centerHeaderToolbar}}
         @rightHeaderToolbar={{this.rightHeaderToolbar}}
-        @refreshKey={{this.currentUser?.id}}
+        @refreshKey={{this.refreshKey}}
       />
     </div>
   </template>

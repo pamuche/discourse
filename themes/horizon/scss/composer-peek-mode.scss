@@ -1,8 +1,10 @@
+@use "lib/viewport";
+
 .peek-mode-toggle {
   display: none;
 }
 
-@media screen and (width >= 1300px) {
+@include viewport.from(xl) {
   html:not(.fullscreen-composer) {
     .peek-mode-toggle svg {
       transform: scaleX(-1);
@@ -34,7 +36,6 @@
           top: var(--header-offset);
           bottom: var(--main-grid-gap);
           left: unset;
-          height: unset;
           max-width: 36.5vw;
         }
 
@@ -58,6 +59,12 @@
 
         .sidebar-wrapper .sidebar-container {
           height: unset;
+        }
+
+        &:not(.keyboard-visible) {
+          #reply-control:not(.fullscreen).hide-preview {
+            height: unset;
+          }
         }
       }
     }

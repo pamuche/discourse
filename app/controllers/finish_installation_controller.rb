@@ -59,7 +59,7 @@ class FinishInstallationController < ApplicationController
     # This gets cleared when an admin successfully actives their account
     SiteSetting.global_notice = I18n.t("finish_installation.discourse_id.global_notice")
 
-    redirect_to("/auth/discourse_id")
+    redirect_to("#{Discourse.base_path}/auth/discourse_id?origin=#{wizard_path}")
   end
 
   protected
@@ -84,21 +84,19 @@ class FinishInstallationController < ApplicationController
   end
 
   def setup_discourse_id
-    begin
-      if find_allowed_emails.empty?
-        raise StandardError.new(I18n.t("finish_installation.discourse_id.no_allowed_emails"))
-      end
-      SiteSetting.enable_discourse_id = true
-      # Since we're setting up Discourse ID, disable local logins
-      SiteSetting.enable_local_logins = false
-      # Let ID set people's usernames
-      SiteSetting.auth_overrides_username = true
-      @discourse_id_enabled = true
-      @discourse_id_error = nil
-    rescue StandardError => e
-      @discourse_id_enabled = false
-      @discourse_id_error = e.message
+    if find_allowed_emails.empty?
+      raise StandardError.new(I18n.t("finish_installation.discourse_id.no_allowed_emails"))
     end
+    SiteSetting.enable_discourse_id = true
+    # Since we're setting up Discourse ID, disable local logins
+    SiteSetting.enable_local_logins = false
+    # Let ID set people's usernames
+    SiteSetting.auth_overrides_username = true
+    @discourse_id_enabled = true
+    @discourse_id_error = nil
+  rescue StandardError => e
+    @discourse_id_enabled = false
+    @discourse_id_error = e.message
   end
 
   def seed_admin_users

@@ -1,22 +1,37 @@
-const SUPPORTED_FILE_EXTENSIONS = [".js", ".js.es6", ".hbs", ".gjs"];
+const SUPPORTED_FILE_EXTENSIONS = [
+  ".js",
+  ".js.es6",
+  ".hbs",
+  ".gjs",
+  ".ts",
+  ".gts",
+];
 
 const IS_CONNECTOR_REGEX = /(^|\/)connectors\//;
 
 export default {
-  "virtual:main": (tree, { themeId }) => {
-    let output = cleanMultiline(`
-      import "virtual:init-settings";
+  "virtual:entrypoint": (moduleFilenames, { themeId, pluginName }) => {
+    const label = pluginName ? `PLUGIN ${pluginName}` : `THEME ${themeId}`;
+    const imports = [];
+    const entries = [];
+    const warnings = [];
 
-      const themeCompatModules = {};
-    `);
+    const exportedModules = new Set();
 
     let i = 1;
-    for (const moduleFilename of Object.keys(tree)) {
+    for (const moduleFilename of moduleFilenames) {
+      // Type-only declaration files have no runtime module to export.
+      if (moduleFilename.endsWith(".d.ts")) {
+        continue;
+      }
+
       if (
         !SUPPORTED_FILE_EXTENSIONS.some((ext) => moduleFilename.endsWith(ext))
       ) {
         // Unsupported file type. Log a warning and skip
-        output += `console.warn("[THEME ${themeId}] Unsupported file type: ${moduleFilename}");\n`;
+        warnings.push(
+          `console.warn("[${label}] Unsupported file type: ${moduleFilename}");`
+        );
         continue;
       }
 
@@ -38,30 +53,39 @@ export default {
             "$1templates/connectors/"
           );
         } else if (!isTemplate && isInTemplatesDirectory) {
-          compatModuleName = compatModuleName.replace(/^templates\//, "");
+          compatModuleName = compatModuleName.replace(
+            /(^|\/)templates\//,
+            "$1"
+          );
         }
       }
 
       const importPath = filenameWithoutExtension.match(IS_CONNECTOR_REGEX)
         ? moduleFilename
         : filenameWithoutExtension;
-      output += `import * as Mod${i} from "./${importPath}";\n`;
-      output += `themeCompatModules["${compatModuleName}"] = Mod${i};\n\n`;
+
+      if (exportedModules.has(importPath)) {
+        continue;
+      }
+      exportedModules.add(importPath);
+
+      imports.push(`import * as Mod${i} from "./${importPath}";`);
+      entries.push(`  "${compatModuleName}": Mod${i},`);
 
       i += 1;
     }
 
-    output += "export default themeCompatModules;\n";
-
-    return output;
+    return [
+      ...imports,
+      ...warnings,
+      "const compatModules = {",
+      ...entries,
+      "};",
+      "export default compatModules;",
+      "",
+    ].join("\n");
   },
-  "virtual:init-settings": (_, { themeId, settings }) => {
-    return (
-      `import { registerSettings } from "discourse/lib/theme-settings-store";\n\n` +
-      `registerSettings(${themeId}, ${JSON.stringify(settings, null, 2)});\n`
-    );
-  },
-  "virtual:theme": (_, { themeId }) => {
+  "virtual:theme": ({ themeId }) => {
     return cleanMultiline(`
       import { getObjectForTheme } from "discourse/lib/theme-settings-store";
 

@@ -34,8 +34,17 @@ be:
             canned_reply:
               label: "Адказаць"
     discourse_ai:
+      ai_tool_approval:
+        loading: "Загрузка ..."
+        tool: "Дзеянне"
+        user: "Карыстальнік"
+        approve: "Ухваліць"
+        reject: "адхіляць"
+        approved: "Ухвалены"
+        rejected: "Адхіленыя"
+      llm_selector:
+        none: "Няма"
       features:
-        back: "Назад"
         disabled: "(адключана)"
         groups: "групы:"
         edit: "Налады"
@@ -44,9 +53,13 @@ be:
           reset: "скінуць"
         search:
           name: "Пошук"
+        image_caption:
+          setting_groups:
+            settings: "Налады"
         spam:
           name: "Спам"
       translations:
+        category_scope: "катэгорыі"
         stats:
           eta_minutes:
             one: "%{count} хвіліну"
@@ -79,25 +92,25 @@ be:
         username: "Імя карыстальніка"
         total_requests: "Усяго запытаў"
         total: "Усяго"
-      ai_persona:
-        back: "Назад"
-        name: "Імя"
+      ai_agent:
+        name: "Назва"
         edit: "Рэдагаваць"
-        export: "экспарт"
+        export: "Экспарт"
         description: "Апісанне"
         user: Карыстальнік
         save: "Захаваць"
         delete: "Выдаліць"
+        thinking_effort_options:
+          none: "Няма"
         response_format:
           open_modal: "Рэдагаваць"
         filters:
-          reset: "скінуць"
+          reset: "Скінуць"
       rag:
         uploads:
           title: "Загрузкі"
           uploading: "Запампоўванне ..."
       tools:
-        back: "Назад"
         export: "экспарт"
         name: "Імя"
         description: "Апісанне"
@@ -107,11 +120,26 @@ be:
         parameter_required: "абавязковыя"
         edit: "Рэдагаваць"
         delete: "Выдаліць"
+      secrets:
+        name: "Імя"
+        secret: "значэнне"
+        save: "Захаваць"
+        edit: "Рэдагаваць"
+        delete: "Выдаліць"
+        embedding: "узаемадзеянне"
+      mcp_servers:
+        name: "Назва"
+        description: "Апісанне"
+        url: "URL спасылка"
+        save: "Захаваць"
+        edit: "Рэдагаваць"
+        delete: "Выдаліць"
+        tools_modal:
+          required: "Абавязкова"
       llms:
         display_name: "Імя"
         save: "Захаваць"
         edit: "Рэдагаваць"
-        back: "Назад"
         delete: Выдаліць
         quotas:
           group: "Група"
@@ -120,7 +148,7 @@ be:
         next:
           title: "Далей"
         tests:
-          success: "поспех!"
+          success: "Працуе!"
         providers:
           google: "Google"
       ai_helper:
@@ -132,15 +160,12 @@ be:
           cancel: "Адмяніць"
         thumbnail_suggestions:
           try_again: "Паспрабаваць яшчэ раз"
-        image_caption:
-          save_caption: "Захаваць"
       embeddings:
-        back: "Назад"
         save: "Захаваць"
         delete: "Выдаліць"
         edit: "Рэдагаваць"
         tests:
-          success: "поспех!"
+          success: "Працуе!"
         display_name: "Імя"
         providers:
           google: "Google"

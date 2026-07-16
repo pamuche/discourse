@@ -1,3 +1,4 @@
+/* eslint-disable qunit/no-conditional-assertions */
 import Service from "@ember/service";
 import { click, render } from "@ember/test-helpers";
 import { module, test } from "qunit";
@@ -7,12 +8,12 @@ import { setupRenderingTest } from "discourse/tests/helpers/component-test";
 import pretender from "discourse/tests/helpers/create-pretender";
 import AiSearchDiscoveries from "discourse/plugins/discourse-ai/discourse/components/ai-search-discoveries";
 
-module("Integration | Component | ai-search-discoveries", function (hooks) {
+module("Integration | Component | AiSearchDiscoveries", function (hooks) {
   setupRenderingTest(hooks);
 
   hooks.beforeEach(function () {
     this.siteSettings.ai_discover_enabled = true;
-    this.currentUser.can_use_ai_discover_persona = true;
+    this.currentUser.can_use_ai_discover_agent = true;
 
     this.closeSearchMenuCalled = false;
     this.closeSearchMenu = () => {

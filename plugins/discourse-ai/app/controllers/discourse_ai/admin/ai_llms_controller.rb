@@ -20,12 +20,19 @@ module DiscourseAi
                    ).as_json,
                  meta: {
                    provider_params: LlmModel.provider_params,
+                   provider_capabilities: DiscourseAi::Completions::Llm.provider_capabilities,
                    presets: DiscourseAi::Completions::Llm.presets,
                    providers: DiscourseAi::Completions::Llm.provider_names,
                    tokenizers:
                      DiscourseAi::Completions::Llm.tokenizer_names.map { |tn|
                        { id: tn, name: tn.split("::").last }
                      },
+                   ai_secrets:
+                     ActiveModel::ArraySerializer.new(
+                       AiSecret.all.order(:name),
+                       each_serializer: AiSecretSerializer,
+                       root: false,
+                     ).as_json,
                  },
                }
       end
@@ -62,21 +69,23 @@ module DiscourseAi
         initial_quotas = llm_model.llm_quotas.map(&:attributes)
 
         if params[:ai_llm].key?(:llm_quotas)
-          if quota_params
-            existing_quota_group_ids = llm_model.llm_quotas.pluck(:group_id)
-            new_quota_group_ids = quota_params.map { |q| q[:group_id] }
+          ActiveRecord::Base.transaction do
+            if quota_params
+              existing_quota_group_ids = llm_model.llm_quotas.pluck(:group_id)
+              new_quota_group_ids = quota_params.map { |q| q[:group_id] }
 
-            llm_model
-              .llm_quotas
-              .where(group_id: existing_quota_group_ids - new_quota_group_ids)
-              .destroy_all
+              llm_model
+                .llm_quotas
+                .where(group_id: existing_quota_group_ids - new_quota_group_ids)
+                .destroy_all
 
-            quota_params.each do |quota_param|
-              quota = llm_model.llm_quotas.find_or_initialize_by(group_id: quota_param[:group_id])
-              quota.update!(quota_param)
+              quota_params.each do |quota_param|
+                quota = llm_model.llm_quotas.find_or_initialize_by(group_id: quota_param[:group_id])
+                quota.update!(quota_param)
+              end
+            else
+              llm_model.llm_quotas.destroy_all
             end
-          else
-            llm_model.llm_quotas.destroy_all
           end
         end
 
@@ -97,6 +106,8 @@ module DiscourseAi
         else
           render_json_error llm_model
         end
+      rescue ActiveRecord::RecordInvalid => e
+        render_json_error e.record
       end
 
       def destroy
@@ -141,13 +152,15 @@ module DiscourseAi
       end
 
       def test
-        RateLimiter.new(current_user, "llm_test_#{current_user.id}", 3, 1.minute).performed!
+        RateLimiter.new(current_user, "llm_test_#{current_user.id}", 6, 1.minute).performed!
+
+        validator = DiscourseAi::Configuration::LlmValidator.new
 
         # For seeded models, test the existing model directly since provider/url/api_key are hidden
         if params.dig(:ai_llm, :id).present?
           existing_model = LlmModel.find_by(id: params[:ai_llm][:id])
           if existing_model&.seeded?
-            DiscourseAi::Configuration::LlmValidator.new.run_test(existing_model)
+            validator.run_test(existing_model)
             return render json: { success: true }
           end
         end
@@ -156,13 +169,13 @@ module DiscourseAi
         llm_model = LlmModel.new(ai_llm_params.merge(display_name: "LLM test"))
 
         if llm_model.valid?
-          DiscourseAi::Configuration::LlmValidator.new.run_test(llm_model)
+          validator.run_test(llm_model)
           render json: { success: true }
         else
           render json: { success: false, validation_errors: llm_model.errors.full_messages }
         end
       rescue DiscourseAi::Completions::Endpoints::Base::CompletionFailed => e
-        render json: { success: false, error: e.message }
+        render json: { success: false, error: e.message, failed_mode: validator&.last_failed_mode }
       end
 
       private
@@ -172,12 +185,18 @@ module DiscourseAi
           params[:ai_llm][:llm_quotas].map do |quota|
             mapped = {}
             mapped[:group_id] = quota[:group_id].to_i
-            mapped[:max_tokens] = quota[:max_tokens].to_i if quota[:max_tokens].present?
-            mapped[:max_usages] = quota[:max_usages].to_i if quota[:max_usages].present?
+            %i[max_tokens max_usages].each do |key|
+              mapped[key] = optional_integer_param(quota[key]) if quota.key?(key)
+            end
+            mapped[:max_cost] = quota[:max_cost].presence if quota.key?(:max_cost)
             mapped[:duration_seconds] = quota[:duration_seconds].to_i
             mapped
           end
         end
+      end
+
+      def optional_integer_param(value)
+        value.presence&.to_i
       end
 
       def credit_allocation_params
@@ -210,9 +229,11 @@ module DiscourseAi
             :max_prompt_tokens,
             :max_output_tokens,
             :api_key,
+            :ai_secret_id,
             :vision_enabled,
             :input_cost,
             :cached_input_cost,
+            :cache_write_cost,
             :output_cost,
             allowed_attachment_types: [],
           )
@@ -230,16 +251,41 @@ module DiscourseAi
 
           if received_prov_params.present?
             received_prov_params.each do |pname, value|
-              if extra_field_names[pname.to_sym] == :checkbox
+              field_def = extra_field_names[pname.to_sym]
+              is_checkbox =
+                field_def == :checkbox || (field_def.is_a?(Hash) && field_def[:type] == :checkbox)
+              if is_checkbox
                 received_prov_params[pname] = ActiveModel::Type::Boolean.new.cast(value)
               end
             end
 
-            permitted[:provider_params] = received_prov_params.permit!
+            sanitize_dependent_params!(received_prov_params, extra_field_names)
+
+            permitted[:provider_params] = received_prov_params.permit(*extra_field_names.keys)
           end
         end
 
         permitted
+      end
+
+      def sanitize_dependent_params!(prov_params, field_definitions)
+        prov_params.each do |pname, _value|
+          field_def = field_definitions[pname.to_sym]
+          next unless field_def.is_a?(Hash) && field_def[:depends_on]
+
+          deps = Array(field_def[:depends_on])
+          parent_inactive =
+            deps.any? do |dep|
+              parent_val = prov_params[dep.to_s]
+              parent_val.nil? || parent_val == false || parent_val == "false" ||
+                parent_val == "default" || parent_val == ""
+            end
+
+          if parent_inactive
+            default = field_def[:default]
+            prov_params[pname] = default || nil
+          end
+        end
       end
 
       def ai_llm_logger_fields
@@ -281,7 +327,13 @@ module DiscourseAi
           entity_details[:quotas] = llm_model
             .llm_quotas
             .map do |quota|
-              "Group #{quota.group_id}: #{quota.max_tokens} tokens, #{quota.max_usages} usages, #{quota.duration_seconds}s"
+              quota_summary(
+                quota.group_id,
+                quota.max_tokens,
+                quota.max_usages,
+                quota.max_cost,
+                quota.duration_seconds,
+              )
             end
             .join("; ")
         end
@@ -298,11 +350,27 @@ module DiscourseAi
         if initial_quotas != current_quotas
           initial_quota_summary =
             initial_quotas
-              .map { |q| "Group #{q["group_id"]}: #{q["max_tokens"]} tokens" }
+              .map do |q|
+                quota_summary(
+                  q["group_id"],
+                  q["max_tokens"],
+                  q["max_usages"],
+                  q["max_cost"],
+                  q["duration_seconds"],
+                )
+              end
               .join("; ")
           current_quota_summary =
             current_quotas
-              .map { |q| "Group #{q["group_id"]}: #{q["max_tokens"]} tokens" }
+              .map do |q|
+                quota_summary(
+                  q["group_id"],
+                  q["max_tokens"],
+                  q["max_usages"],
+                  q["max_cost"],
+                  q["duration_seconds"],
+                )
+              end
               .join("; ")
           entity_details[:quotas_changed] = true
           entity_details[:quotas] = "#{initial_quota_summary} → #{current_quota_summary}"
@@ -315,6 +383,20 @@ module DiscourseAi
           ai_llm_logger_fields,
           entity_details,
         )
+      end
+
+      def quota_summary(group_id, max_tokens, max_usages, max_cost, duration_seconds)
+        limits = []
+        limits << "#{max_tokens} tokens" if max_tokens.present?
+        limits << "#{max_usages} usages" if max_usages.present?
+        limits << "$#{formatted_decimal(max_cost)} cost" if max_cost.present?
+        limits << "#{duration_seconds}s" if duration_seconds.present?
+
+        "Group #{group_id}: #{limits.join(", ")}"
+      end
+
+      def formatted_decimal(value)
+        value.is_a?(BigDecimal) ? value.to_s("F") : value
       end
 
       def log_llm_model_deletion(model_details)

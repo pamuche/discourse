@@ -47,8 +47,6 @@ ar:
     chat_integration_rocketchat_webhook_url: "عنوان URL لخطاف الويب لتكامل الدردشة Rocket Chat"
     chat_integration_rocketchat_excerpt_length: "طول المقتطف من منشور Rocket Chat"
     chat_integration_gitter_enabled: "تفعيل مقدِّم خدمة تكامل الدردشة Gitter"
-    chat_integration_flowdock_enabled: "تفعيل مقدِّم خدمة تكامل الدردشة Flowdock"
-    chat_integration_flowdock_excerpt_length: "طول المقتطف من منشور Flowdock"
     chat_integration_groupme_enabled: "تفعيل مقدِّم خدمة تكامل الدردشة Groupme"
     chat_integration_groupme_excerpt_length: "طول المقتطف من منشور Groupme"
     chat_integration_groupme_bot_ids: "*مطلوب* مُعرِّفات برامج الروبوت، مفصولة بالرمز \",\" إذا كانت عديدة"
@@ -63,7 +61,7 @@ ar:
     chat_integration_google_excerpt_length: "طول المقتطف من منشور Google Chat"
   dashboard:
     problem:
-      channel_errors: "بعض قنوات تكامل الدردشة تحتوي على أخطاء. تفضل بزيارة <a href='%{base_path}/admin/plugins/chat-integration'>قسم تكامل الدردشة</a> لمعرفة المزيد."
+      channel_errors: "بعض قنوات تكامل الدردشة تحتوي على أخطاء. تفضل بزيارة <a href='%{base_path}/admin/plugins/discourse-chat-integration'>قسم تكامل الدردشة</a> لمعرفة المزيد."
   discourse_automation:
     scriptables:
       send_slack_message:
@@ -80,6 +78,10 @@ ar:
       added_and_removed: "تمت إضافة %{added} وإزالة %{removed}"
       added: "تمت إضافة %{added}"
       removed: "تمت إزالة %{removed}"
+    errors:
+      provider_already_enabled: "مقدِّم خدمة \"%{name}\" مفعّل بالفعل"
+      provider_not_found: "مقدِّم خدمة \"%{name}\" غير موجود"
+      setting_update_failed: "فشل تحديث الإعدادات: %{errors}"
     provider:
       slack:
         status:
@@ -225,8 +227,6 @@ ar:
           ~~~الاقتباس
           %{excerpt}
           ~~~
-      flowdock:
-        message_title: "تم النشر"
       google:
         new_post: "منشور جديد على %{site_title}"
         new_topic: "منشور جديد على %{site_title}"

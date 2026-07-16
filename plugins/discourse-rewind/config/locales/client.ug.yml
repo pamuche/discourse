@@ -24,7 +24,7 @@ ug:
           title: سۆز ئىشلىتىش
         reading_time:
           title: ئوقۇش ۋاقتى
-          book_comparison: "سىز تور بېكىتىمىزدە <code>%{readingTitme}</code> ئوقۇدىڭىز! بۇ <i>%{bookTitle}</i> كىتابنى ئوقۇشقا كەتكەن ۋاقىتقا تەڭ"
+          book_comparison: "سىز تور بېكىتىمىزدە <code>%{readingTime}</code> ئوقۇدىڭىز! بۇ <i>%{bookTitle}</i> كىتابنى ئوقۇشقا كەتكەن ۋاقىتقا تەڭ"
         post_used_reactions:
           title: تېمىدا ئەڭ كۆپ ئىشلىتىلگەن ئىنكاس
           total_number: "جەمئىي ئىنكاس سانى: %{count}"
@@ -40,6 +40,9 @@ ug:
           title:
             one: سىز ئەڭ كۆپ زىيارەت قىلىدىغان بەلگە
             other: سىز ئەڭ كۆپ زىيارەت قىلىدىغان %{count} سەھىپە
+          title_others:
+            one: "%{username} نىڭ ئەڭ كۆپ كۆرۈلگەن بەلگىسى"
+            other: "%{username} نىڭ ئەڭ كۆپ كۆرۈلگەن %{count} بەلگىسى"
         best_topics:
           view_topic: تېما كۆرسەت
           title:
@@ -78,14 +81,18 @@ ug:
           favorite_channels: ياقتۇرىدىغان قانال
           messages: ئۇچۇر
           bot_name: XxRewindBotxX
-          you: سىز
+          author: سىز
+          author_others: "%{username}"
           channel_title: "#سۆھبەت پائالىيىتى"
           status_online: "● توردا"
-          message_1: "سىز بۇ يىل <strong>%{count}</strong> ئۇچۇر يوللىدىڭىز!"
+          message_1:
+            one: "سىز بۇ يىل <strong>%{count}</strong> ئۇچۇر يوللىدىڭىز!"
+            other: "سىز بۇ يىل <strong>%{count}</strong> ئۇچۇر يوللىدىڭىز!"
           reply_1: "lol قالتىس B-)"
-          message_2: "سىز پەرقلىق <strong>%{channel_count}</strong> كىشى ياكى گۇرۇپپا بىلەن <strong>%{dm_count}</strong> بىۋاستە ئۇچۇر سۆھبىتى ئۆتكۈزدىڭىز."
           reply_2: "ئاجايىپ :D"
-          message_3: "كىشىلەر ئۇچۇرىڭىزنى ياقتۇردى! <strong>%{count}</strong> ئىنكاسقا ئېرىشتىڭىز ❤️"
+          message_3:
+            one: "كىشىلەر ئۇچۇرىڭىزنى ياقتۇردى! <strong>%{count}</strong> ئىنكاسقا ئېرىشتىڭىز ❤️"
+            other: "كىشىلەر ئۇچۇرىڭىزنى ياقتۇردى! <strong>%{count}</strong> ئىنكاسقا ئېرىشتىڭىز ❤️"
           reply_3: "r0fl rAwr 8-)"
           message_4: "سىزنىڭ ئوتتۇرىچە ئۇچۇر ئۇزۇنلۇقىڭىز <strong>%{length}</strong> ھەرپ"
           message_5: "ياقتۇرىدىغان قانىلىڭىز:"
@@ -123,6 +130,9 @@ ug:
           subtitle:
             one: سىز بۇ يىل %{count} يېڭى ئىشلەتكۈچىگە ياردەم قىلدىڭىز
             other: سىز بۇ يىل %{count} يېڭى ئىشلەتكۈچىگە ياردەم قىلدىڭىز
+          subtitle_others:
+            one: "%{username} بۇ يىل %{count} يېڭى ئىشلەتكۈچىگە ياردەم قىلدى"
+            other: "%{username} بۇ يىل %{count} يېڭى ئىشلەتكۈچىگە ياردەم قىلدى"
           new_member:
             one: "%{count} يېڭى ئەزا"
             other: "%{count} يېڭى ئەزا"
@@ -132,10 +142,12 @@ ug:
           replies: يازمىغا جاۋاب
           mentions: ئاتاش
           topics_with_new_users: يېڭى ئىشلەتكۈچىنىڭ تېمىسى
-          your_contributions_helped: تۆھپىڭىز ياردەم قىلدى
+          contributions_helped: تۆھپىڭىز ياردەم قىلدى
+          contributions_helped_others: "%{username} نىڭ تۆھپىسى ياردەم بەردى"
         time_of_day_activity:
           title: كۈندىلىك پائالىيەت رېتىمى
           play_button: پائالىيىتىڭىزنى ئاۋازلىق ياڭرىتىدۇ
+          play_button_others: "%{username} نىڭ پائالىيىتىنى ئاۋاز سۈپىتىدە ياڭرات"
           stop_button: ئاۋاز ياڭرىتىشنى توختات
         writing_analysis:
           title: يازما تەھلىلى

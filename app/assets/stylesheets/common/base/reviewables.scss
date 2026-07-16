@@ -7,12 +7,6 @@
     margin-bottom: 1em;
   }
 
-  .flagged-post-header {
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
-  }
-
   .status {
     color: var(--primary-medium);
 
@@ -201,25 +195,33 @@
   }
 
   .reviewable-user-details {
+    --name-width: 8em;
+    --name-margin: 1em;
     padding-bottom: 0.25em;
     display: flex;
     margin-bottom: 0.5em;
+
+    @include viewport.until(sm) {
+      flex-direction: column;
+    }
 
     &:not(:last-child) {
       border-bottom: 1px solid var(--content-border-color);
     }
 
     .name {
-      width: 8em;
+      width: var(--name-width);
       font-weight: bold;
-      margin-right: 1em;
+      margin-right: var(--name-margin);
     }
 
     .value {
-      max-width: calc(
-        100% - 8em - 1em
-      ); // subtracting width of name and margin-right
-      overflow-wrap: break-word;
+      max-width: calc(100% - var(--name-width) - var(--name-margin));
+      overflow-wrap: anywhere;
+
+      @include viewport.until(sm) {
+        width: auto;
+      }
     }
   }
 }
@@ -233,18 +235,10 @@
 }
 
 .reviewable-filters {
-  background-color: var(--primary-very-low);
   padding: var(--space-4) var(--space-6);
   margin-bottom: var(--space-4);
-
-  .topic-filter .btn {
-    display: flex;
-    width: auto;
-  }
-
-  .score-filter {
-    width: 5em;
-  }
+  border: 1px solid var(--content-border-color);
+  border-radius: var(--d-border-radius);
 
   .reviewable-filter {
     display: flex;
@@ -253,11 +247,6 @@
 
     .filter-label {
       margin: 0 0 0.5em 0;
-    }
-
-    .score-filter {
-      margin: 0;
-      width: 100%;
     }
 
     .category-chooser {
@@ -273,14 +262,6 @@
   .btn-small {
     margin-left: 0.5em;
   }
-}
-
-.claimed-actions {
-  display: flex;
-  flex: 1 1 100%;
-  margin-right: 0;
-  align-items: center;
-  margin-bottom: 0.5em;
 }
 
 .reviewable-topics {
@@ -375,24 +356,6 @@
 
     @include viewport.from(sm) {
       display: flex;
-    }
-  }
-
-  .reviewable-post-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    max-width: 100%;
-
-    .reviewable-reply-to {
-      display: flex;
-      align-items: center;
-      color: var(--primary-medium);
-      font-size: 0.9em;
-
-      .d-icon {
-        margin-right: 0.5em;
-      }
     }
   }
 
@@ -513,17 +476,6 @@
       color: var(--secondary);
       border-radius: 8px;
       background-color: var(--secondary-high);
-
-      &.-flagged-post,
-      &.-flagged-chat-message {
-        background-color: var(--danger);
-      }
-
-      &.-queued-post,
-      &.-queued-topic,
-      &.-user {
-        background-color: var(--tertiary);
-      }
     }
 
     .reply-count {
@@ -548,25 +500,6 @@
     font-weight: bold;
   }
 
-  .reviewable-contents {
-    display: flex;
-    flex-wrap: wrap;
-    margin: 1.5rem 0 1rem;
-    background: var(--secondary);
-    padding: 1rem;
-
-    @include viewport.until(sm) {
-      .reviewable-post-header,
-      .post-body {
-        max-width: 100%;
-
-        p {
-          overflow-x: scroll;
-        }
-      }
-    }
-  }
-
   .reviewable-actions {
     display: flex;
     flex-wrap: wrap;
@@ -581,13 +514,6 @@
 
 .reviewable-stale {
   opacity: 0.7;
-}
-
-.reviewable-deleted {
-  .reviewable-contents .post-contents .post-body {
-    background-color: var(--danger-low-mid);
-    padding: 0.5em;
-  }
 }
 
 .blur-images {
@@ -626,14 +552,7 @@
     white-space: nowrap;
   }
 
-  .reviewed-by {
-    .date {
-      margin-left: 0.5em;
-    }
-  }
-
-  .user,
-  .reviewed-by {
+  .user {
     display: flex;
     align-items: center;
   }
@@ -693,8 +612,7 @@
       white-space: nowrap;
       vertical-align: baseline;
 
-      &.user a,
-      &.reviewed-by a {
+      &.user a {
         max-width: 150px;
 
         @include ellipsis;
@@ -746,15 +664,6 @@
   flex-wrap: wrap;
   width: 100%;
   gap: var(--space-2) var(--space-4);
-
-  .editable-created-by {
-    display: flex;
-    margin-bottom: 0.5em;
-
-    .avatar {
-      margin-right: 0.25em;
-    }
-  }
 
   .editable-field {
     .mini-tag-chooser {

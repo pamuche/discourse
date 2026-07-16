@@ -1,5 +1,8 @@
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
+import linkifySettingLinks from "discourse/admin/modifiers/linkify-setting-links";
 
-<template>
-  <div class="desc">{{htmlSafe @description}}</div>
+export default <template>
+  <div class="desc" {{linkifySettingLinks @description}}>{{trustHTML
+      @description
+    }}</div>
 </template>

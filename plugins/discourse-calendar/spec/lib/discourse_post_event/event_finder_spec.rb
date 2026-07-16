@@ -118,6 +118,41 @@ describe DiscoursePostEvent::EventFinder do
     end
   end
 
+  context "when the event is associated to an unlisted topic" do
+    fab!(:admin)
+    fab!(:trust_level_4)
+    let(:post1) do
+      PostCreator.create!(
+        user,
+        title: "We should buy a boat",
+        raw: "The boat market is quite active lately.",
+      )
+    end
+    let!(:event) { Fabricate(:event, post: post1) }
+
+    before { post1.topic.update_column(:visible, false) }
+
+    it "doesn’t return the event for regular users" do
+      expect(finder.search(current_user)).to match_array([])
+    end
+
+    it "doesn’t return the event for anonymous users" do
+      expect(finder.search(nil)).to match_array([])
+    end
+
+    it "doesn’t return the event for the topic author" do
+      expect(finder.search(user)).to match_array([])
+    end
+
+    it "returns the event for staff" do
+      expect(finder.search(admin)).to match_array([event])
+    end
+
+    it "returns the event for trust level 4 users" do
+      expect(finder.search(trust_level_4)).to match_array([event])
+    end
+  end
+
   context "when events are filtered" do
     describe "by post_id" do
       let(:post1) do
@@ -219,6 +254,89 @@ describe DiscoursePostEvent::EventFinder do
           expect(results).to include(recurring_event_endless)
           expect(results).not_to include(non_recurring_event_august)
         end
+      end
+    end
+
+    describe "with after=now" do
+      let!(:past_event) { Fabricate(:event, original_starts_at: 2.hours.ago) }
+      let!(:future_event) { Fabricate(:event, original_starts_at: 2.hours.from_now) }
+
+      it "resolves 'now' to the current time" do
+        results = finder.search(current_user, { after: "now" })
+        expect(results).not_to include(past_event)
+        expect(results).to include(future_event)
+      end
+    end
+
+    describe "with include_ongoing" do
+      fab!(:past_event) do
+        Fabricate(:event, original_starts_at: 2.hours.ago, original_ends_at: 1.hour.ago)
+      end
+      fab!(:ongoing_event) do
+        Fabricate(:event, original_starts_at: 2.hours.ago, original_ends_at: 2.hours.from_now)
+      end
+      fab!(:future_event) do
+        Fabricate(:event, original_starts_at: 2.hours.from_now, original_ends_at: 3.hours.from_now)
+      end
+
+      it "includes events that started in the past but have not ended yet" do
+        results = finder.search(current_user, { after: "now", include_ongoing: "true" })
+        expect(results).not_to include(past_event)
+        expect(results).to include(ongoing_event)
+        expect(results).to include(future_event)
+      end
+
+      it "does not include ongoing events without the flag" do
+        results = finder.search(current_user, { after: "now" })
+        expect(results).not_to include(past_event)
+        expect(results).not_to include(ongoing_event)
+        expect(results).to include(future_event)
+      end
+
+      it "includes multi-month spanning events when viewing later months" do
+        freeze_time DateTime.parse("2025-06-15 12:00")
+
+        spanning_event =
+          Fabricate(
+            :event,
+            original_starts_at: Time.parse("2025-03-01 09:00"),
+            original_ends_at: Time.parse("2025-12-01 17:00"),
+          )
+
+        results =
+          finder.search(
+            current_user,
+            {
+              after: Time.parse("2025-06-01 00:00").to_s,
+              before: Time.parse("2025-07-01 00:00").to_s,
+              include_ongoing: "true",
+            },
+          )
+
+        expect(results).to include(spanning_event)
+      end
+
+      it "does not include multi-month spanning events that have already ended" do
+        freeze_time DateTime.parse("2025-06-15 12:00")
+
+        ended_spanning_event =
+          Fabricate(
+            :event,
+            original_starts_at: Time.parse("2025-01-01 09:00"),
+            original_ends_at: Time.parse("2025-05-01 17:00"),
+          )
+
+        results =
+          finder.search(
+            current_user,
+            {
+              after: Time.parse("2025-06-01 00:00").to_s,
+              before: Time.parse("2025-07-01 00:00").to_s,
+              include_ongoing: "true",
+            },
+          )
+
+        expect(results).not_to include(ended_spanning_event)
       end
     end
 

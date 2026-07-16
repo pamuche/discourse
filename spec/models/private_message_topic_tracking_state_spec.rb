@@ -83,6 +83,25 @@ RSpec.describe PrivateMessageTopicTrackingState do
 
       expect(described_class.report(user_2).map(&:topic_id)).to contain_exactly(private_message.id)
     end
+
+    it "excludes invisible topics for non-staff users" do
+      TopicUser.find_by(user: user_2, topic: private_message).update!(last_read_post_number: 1)
+
+      private_message.update!(visible: false, highest_post_number: 2)
+
+      report = described_class.report(user_2)
+      expect(report.map(&:topic_id)).to contain_exactly(group_message.id)
+    end
+
+    it "includes invisible topics for staff users" do
+      user_2.grant_admin!
+      TopicUser.find_by(user: user_2, topic: private_message).update!(last_read_post_number: 1)
+
+      private_message.update!(visible: false, highest_post_number: 2)
+
+      report = described_class.report(user_2)
+      expect(report.map(&:topic_id)).to contain_exactly(group_message.id, private_message.id)
+    end
   end
 
   describe ".publish_new" do
@@ -141,6 +160,21 @@ RSpec.describe PrivateMessageTopicTrackingState do
 
       messages =
         MessageBus.track_publish { described_class.publish_unread(group_message.first_post) }
+
+      expect(messages).to eq([])
+    end
+
+    it "does not publish small_action posts" do
+      small_action =
+        Fabricate(
+          :post,
+          topic: private_message,
+          user: Discourse.system_user,
+          post_type: Post.types[:small_action],
+          action_code: "visible.disabled",
+        )
+
+      messages = MessageBus.track_publish { described_class.publish_unread(small_action) }
 
       expect(messages).to eq([])
     end

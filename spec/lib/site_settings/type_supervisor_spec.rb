@@ -140,7 +140,7 @@ RSpec.describe SiteSettings::TypeSupervisor do
   context "with different data types" do
     class TestEnumClass
       def self.valid_value?(v)
-        self.values.include?(v)
+        values.include?(v)
       end
 
       def self.values
@@ -453,7 +453,7 @@ RSpec.describe SiteSettings::TypeSupervisor do
   describe ".type_hash" do
     class TestEnumClass2
       def self.valid_value?(v)
-        self.values.include?(v)
+        values.include?(v)
       end
 
       def self.values
@@ -553,6 +553,52 @@ RSpec.describe SiteSettings::TypeSupervisor do
     it "returns int min/max values" do
       expect(settings.type_supervisor.type_hash(:type_int)[:min]).to eq(-10)
       expect(settings.type_supervisor.type_hash(:type_int)[:max]).to eq(10)
+    end
+
+    it "returns authorized_extensions for upload type" do
+      settings.setting(
+        :type_upload_with_extensions,
+        "",
+        type: "upload",
+        authorized_extensions: ".txt",
+      )
+      settings.refresh!
+
+      hash = settings.type_supervisor.type_hash(:type_upload_with_extensions)
+      expect(hash[:type]).to eq "upload"
+      expect(hash[:authorized_extensions]).to eq ".txt"
+    end
+
+    it "does not return authorized_extensions when not specified" do
+      settings.setting(:type_upload_no_extensions, "", type: "upload")
+      settings.refresh!
+
+      hash = settings.type_supervisor.type_hash(:type_upload_no_extensions)
+      expect(hash[:type]).to eq "upload"
+      expect(hash[:authorized_extensions]).to be_nil
+    end
+
+    it "returns max_file_size_kb for upload type" do
+      settings.setting(
+        :type_upload_with_max_size,
+        "",
+        type: "upload",
+        authorized_extensions: ".txt",
+        max_file_size_kb: 512,
+      )
+      settings.refresh!
+
+      hash = settings.type_supervisor.type_hash(:type_upload_with_max_size)
+      expect(hash[:type]).to eq "upload"
+      expect(hash[:max_file_size_kb]).to eq 512
+    end
+
+    it "does not return max_file_size_kb when not specified" do
+      settings.setting(:type_upload_no_max_size, "", type: "upload")
+      settings.refresh!
+
+      hash = settings.type_supervisor.type_hash(:type_upload_no_max_size)
+      expect(hash[:max_file_size_kb]).to be_nil
     end
   end
 

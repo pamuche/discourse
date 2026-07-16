@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-describe "Admin Color Palette Config Area Page", type: :system do
+describe "Admin Color Palette Config Area Page" do
   fab!(:admin)
   fab!(:color_scheme) { Fabricate(:color_scheme, user_selectable: false, name: "A Test Palette") }
   fab!(:color_scheme_2, :color_scheme)
@@ -160,6 +160,7 @@ describe "Admin Color Palette Config Area Page", type: :system do
   end
 
   it "applies the changes live when editing the currently active palette" do
+    color_scheme.update!(user_selectable: true)
     admin.user_option.update!(color_scheme_id: color_scheme.id)
     config_area.visit(color_scheme.id)
     config_area.color_palette_editor.input_for_color("secondary").fill_in(with: "#aa339f")

@@ -924,6 +924,31 @@ RSpec.describe Stylesheet::Manager do
       expect(StylesheetCache.pluck(:target)).to contain_exactly(*core_targets)
     end
 
+    it "hydrates core CSS to disk from StylesheetCache without recompiling" do
+      capture_output(:stderr) { Stylesheet::Manager.precompile_css }
+      Stylesheet::Manager.rm_cache_folder
+      expect(Dir["#{Stylesheet::Manager.cache_fullpath}/*.css"]).to be_empty
+
+      Stylesheet::Compiler.expects(:compile_asset).never
+      output = capture_output(:stderr) { Stylesheet::Manager.precompile_css }
+
+      expect(output.scan(/\(cached\)/).length).to eq(core_targets.length)
+      expect(Dir["#{Stylesheet::Manager.cache_fullpath}/*.css"].length).to eq(core_targets.length)
+    end
+
+    it "hydrates theme CSS to disk from StylesheetCache without recompiling" do
+      capture_output(:stderr) { Stylesheet::Manager.precompile_theme_css }
+      cached_count = StylesheetCache.count
+      Stylesheet::Manager.rm_cache_folder
+      expect(Dir["#{Stylesheet::Manager.cache_fullpath}/*.css"]).to be_empty
+
+      Stylesheet::Compiler.expects(:compile_asset).never
+      output = capture_output(:stderr) { Stylesheet::Manager.precompile_theme_css }
+
+      expect(output).to include("(cached)")
+      expect(Dir["#{Stylesheet::Manager.cache_fullpath}/*.css"].length).to eq(cached_count)
+    end
+
     it "generates precompiled CSS - only themes" do
       output = capture_output(:stderr) { Stylesheet::Manager.precompile_theme_css }
 
@@ -1062,8 +1087,25 @@ RSpec.describe Stylesheet::Manager do
   end
 
   describe ".fs_asset_cachebuster" do
-    it "returns a number in test/development mode" do
-      expect(Stylesheet::Manager.fs_asset_cachebuster).to match(/\A.*:[0-9]+\z/)
+    context "when memoizing via the filesystem manifest (production / test)" do
+      after do
+        path = Stylesheet::Manager.send(:manifest_full_path)
+        File.delete(path) if File.exist?(path)
+        Stylesheet::Manager.recalculate_fs_asset_cachebuster!
+      end
+
+      it "returns a content hash" do
+        expect(Stylesheet::Manager.fs_asset_cachebuster).to match(/\A.*:[0-9a-f]{40}\z/)
+      end
+    end
+
+    context "when memoizing in-process via mtime (development)" do
+      before { Stylesheet::Manager.stubs(:use_file_hash_for_cachebuster?).returns(false) }
+      after { Stylesheet::Manager.recalculate_fs_asset_cachebuster! }
+
+      it "returns an mtime number" do
+        expect(Stylesheet::Manager.fs_asset_cachebuster).to match(/\A.*:[0-9]+\z/)
+      end
     end
 
     context "with production mode enabled" do
@@ -1072,11 +1114,6 @@ RSpec.describe Stylesheet::Manager do
       after do
         path = Stylesheet::Manager.send(:manifest_full_path)
         File.delete(path) if File.exist?(path)
-      end
-
-      it "returns a hash" do
-        cachebuster = Stylesheet::Manager.fs_asset_cachebuster
-        expect(cachebuster).to match(/\A.*:[0-9a-f]{40}\z/)
       end
 
       it "caches the value on the filesystem" do
@@ -1091,7 +1128,7 @@ RSpec.describe Stylesheet::Manager do
         initial_cachebuster = Stylesheet::Manager.recalculate_fs_asset_cachebuster!
 
         additional_file_path =
-          "#{Rails.root}/spec/fixtures/plugins/scss_plugin/assets/stylesheets/colors.scss"
+          "#{Rails.root.join("spec/fixtures/plugins/scss_plugin/assets/stylesheets/colors.scss")}"
         Stylesheet::Manager.stubs(:list_files).returns(original_files + [additional_file_path])
 
         new_cachebuster = Stylesheet::Manager.recalculate_fs_asset_cachebuster!

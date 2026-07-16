@@ -9,9 +9,7 @@ import willDestroy from "@ember/render-modifiers/modifiers/will-destroy";
 import { cancel, schedule } from "@ember/runloop";
 import { service } from "@ember/service";
 import { modifier } from "ember-modifier";
-import DButton from "discourse/components/d-button";
 import EmojiPicker from "discourse/components/emoji-picker";
-import concatClass from "discourse/helpers/concat-class";
 import discourseDebounce from "discourse/lib/debounce";
 import { bind } from "discourse/lib/decorators";
 import getURL from "discourse/lib/get-url";
@@ -20,6 +18,8 @@ import { applyValueTransformer } from "discourse/lib/transformer";
 import { updateUserStatusOnMention } from "discourse/lib/update-user-status-on-mention";
 import isZoomed from "discourse/lib/zoom-check";
 import { eq, lt, not } from "discourse/truth-helpers";
+import DButton from "discourse/ui-kit/d-button";
+import dConcatClass from "discourse/ui-kit/helpers/d-concat-class";
 import { i18n } from "discourse-i18n";
 import ChatMessageAvatar from "discourse/plugins/chat/discourse/components/chat/message/avatar";
 import ChatMessageError from "discourse/plugins/chat/discourse/components/chat/message/error";
@@ -141,7 +141,11 @@ export default class ChatMessage extends Component {
   }
 
   get shouldRenderOpenEmojiPickerButton() {
-    return this.chat.userCanInteractWithChat && this.site.desktopView;
+    return (
+      this.args.interactive !== false &&
+      this.chat.userCanInteractWithChat &&
+      this.site.desktopView
+    );
   }
 
   get secondaryActionsIsExpanded() {
@@ -182,6 +186,7 @@ export default class ChatMessage extends Component {
     cancel(this._invitationSentTimer);
     cancel(this._disableMessageActionsHandler);
     cancel(this._makeMessageActiveHandler);
+    cancel(this._onMouseEnterMessageDebouncedHandler);
     this.#teardownMentionedUsers();
     this.chat.activeMessage = null;
   }
@@ -256,10 +261,14 @@ export default class ChatMessage extends Component {
   get show() {
     return (
       !this.args.message?.deletedAt ||
-      this.currentUser.id === this.args.message?.user?.id ||
-      this.currentUser.staff ||
+      this.currentUser?.id === this.args.message?.user?.id ||
+      this.currentUser?.staff ||
       this.args.message?.channel?.canModerate
     );
+  }
+
+  get isByCurrentUser() {
+    return this.currentUser?.id === this.args.message?.user?.id;
   }
 
   @action
@@ -268,7 +277,10 @@ export default class ChatMessage extends Component {
       return;
     }
 
-    if (this.chat.activeMessage?.model?.id === this.args.message.id) {
+    if (
+      this.chat.activeMessage?.model?.id === this.args.message.id &&
+      this.chat.activeMessage?.context === this.args.context
+    ) {
       return;
     }
 
@@ -291,7 +303,10 @@ export default class ChatMessage extends Component {
       return;
     }
 
-    if (this.chat.activeMessage?.model?.id === this.args.message.id) {
+    if (
+      this.chat.activeMessage?.model?.id === this.args.message.id &&
+      this.chat.activeMessage?.context === this.args.context
+    ) {
       return;
     }
 
@@ -339,7 +354,7 @@ export default class ChatMessage extends Component {
   }
 
   _setActiveMessage() {
-    if (this.args.disableMouseEvents) {
+    if (this.args.disableMouseEvents || this.args.interactive === false) {
       return;
     }
 
@@ -355,6 +370,7 @@ export default class ChatMessage extends Component {
 
     this.chat.activeMessage = {
       model: this.args.message,
+      hideUserInfo: this.hideUserInfo,
       context: this.args.context,
     };
   }
@@ -396,6 +412,10 @@ export default class ChatMessage extends Component {
 
   @action
   onLongPressEnd(element, event) {
+    if (this.args.interactive === false) {
+      return;
+    }
+
     if (event.target.tagName === "IMG") {
       return;
     }
@@ -429,6 +449,10 @@ export default class ChatMessage extends Component {
 
   get hideUserInfo() {
     const message = this.args.message;
+
+    if (message.pinned) {
+      return false;
+    }
 
     const previousMessage = message.previousMessage;
 
@@ -501,8 +525,8 @@ export default class ChatMessage extends Component {
   get shouldRenderStopMessageStreamingButton() {
     return (
       this.args.message.streaming &&
-      (this.currentUser.admin ||
-        this.args.message.inReplyTo?.user?.id === this.currentUser.id)
+      (this.currentUser?.admin ||
+        this.args.message.inReplyTo?.user?.id === this.currentUser?.id)
     );
   }
 
@@ -529,7 +553,7 @@ export default class ChatMessage extends Component {
   }
 
   <template>
-    {{! template-lint-disable no-invalid-interactive }}
+    {{! eslint-disable ember/template-no-invalid-interactive }}
     {{#if this.shouldRender}}
       {{#if this.includeSeparator}}
         <ChatMessageSeparator
@@ -539,14 +563,13 @@ export default class ChatMessage extends Component {
       {{/if}}
 
       <div
-        class={{concatClass
+        class={{dConcatClass
           "chat-message-container"
           (if this.pane.selectingMessages "-selectable")
           (if @message.highlighted "-highlighted")
           (if @message.streaming "-streaming")
           (if (lt @message.user.id 0) "is-bot")
-          (if (eq @message.user.id this.currentUser.id) "is-by-current-user")
-          (if (eq @message.id this.currentUser.id) "is-by-current-user")
+          (if this.isByCurrentUser "is-by-current-user")
           (if
             (eq
               @message.id
@@ -561,6 +584,7 @@ export default class ChatMessage extends Component {
           (if @message.deletedAt "-deleted")
           (if @message.selected "-selected")
           (if @message.error "-errored")
+          (if (eq @interactive false) "-not-interactive")
           (if this.showThreadIndicator "has-thread-indicator")
           (if this.hideUserInfo "-user-info-hidden")
           (if this.hasReply "has-reply")
@@ -579,6 +603,8 @@ export default class ChatMessage extends Component {
         }}
         ...attributes
       >
+        {{yield to="top"}}
+
         {{#if this.show}}
           {{#if this.pane.selectingMessages}}
             <Input
@@ -627,6 +653,7 @@ export default class ChatMessage extends Component {
                 <ChatMessageInfo
                   @message={{@message}}
                   @show={{not this.hideUserInfo}}
+                  @context={{@context}}
                   @threadContext={{this.threadContext}}
                   @dateMode={{@dateMode}}
                 />

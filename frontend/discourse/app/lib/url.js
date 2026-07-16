@@ -3,17 +3,20 @@ import EmberObject from "@ember/object";
 import { setOwner } from "@ember/owner";
 import { next, schedule } from "@ember/runloop";
 import { isEmpty } from "@ember/utils";
-import $ from "jquery";
+import domUtils from "discourse/lib/dom-utils";
+import EmbedMode from "discourse/lib/embed-mode";
 import { isTesting } from "discourse/lib/environment";
 import getURL, { withoutPrefix } from "discourse/lib/get-url";
 import LockOn from "discourse/lib/lock-on";
 import offsetCalculator from "discourse/lib/offset-calculator";
+import { applyValueTransformer } from "discourse/lib/transformer";
 import { defaultHomepage } from "discourse/lib/utilities";
 import Category from "discourse/models/category";
 import Session from "discourse/models/session";
 
 const rewrites = [];
 export const TOPIC_URL_REGEXP = /\/t\/([^\/]*[^\d\/][^\/]*)\/(\d+)\/?(\d+)?/;
+const NESTED_URL_REGEXP = /^\/n\/([^\/]+)\/(\d+)(?:\/(\d+))?/;
 
 // We can add links here that have server side responses but not client side.
 const SERVER_SIDE_ONLY = [
@@ -33,6 +36,14 @@ const SERVER_SIDE_ONLY = [
   /^\/pub\//,
   /^\/invites\//,
   /^\/styleguide/,
+  /^\/safe-mode/,
+  /^\/dev-mode/,
+  /^\/theme-qunit/,
+  /^\/llms\.txt$/,
+  /^\/robots\.txt$/,
+  /^\/offline\.html$/,
+  /^\/manifest\.webmanifest$/,
+  /^\/opensearch\.xml$/,
 ];
 
 // The amount of height (in pixels) that we factor in when jumpEnd is called so
@@ -91,13 +102,14 @@ class DiscourseURL extends EmberObject {
 
     schedule("afterRender", () => {
       if (opts.jumpEnd) {
-        let $holder = $(holderId);
-        let holderHeight = $holder.height();
-        let windowHeight = $(window).height() - offsetCalculator();
+        const holder = document.querySelector(holderId);
+        const holderHeight = holder ? holder.offsetHeight : 0;
+        const windowHeight = window.innerHeight - offsetCalculator();
 
         if (holderHeight > windowHeight) {
-          $(window).scrollTop(
-            $holder.offset().top + (holderHeight - JUMP_END_BUFFER)
+          window.scrollTo(
+            window.pageXOffset,
+            domUtils.offset(holder).top + (holderHeight - JUMP_END_BUFFER)
           );
           _transitioning = false;
           return;
@@ -105,7 +117,7 @@ class DiscourseURL extends EmberObject {
       }
 
       if (postNumber === 1 && !opts.anchor) {
-        $(window).scrollTop(0);
+        window.scrollTo(window.pageXOffset, 0);
         _transitioning = false;
         return;
       }
@@ -116,9 +128,19 @@ class DiscourseURL extends EmberObject {
       if (opts.anchor) {
         selector = `#main #${opts.anchor}, a[name=${opts.anchor}]`;
         holder = document.querySelector(selector);
+
+        if (!holder) {
+          // Anchor not found — post may be cloaked. Scroll to the post
+          // placeholder to trigger uncloaking, then let LockOn retry
+          // until the anchor element appears in the rendered content.
+          const postHolder = document.querySelector(holderId);
+          if (postHolder) {
+            postHolder.scrollIntoView(true);
+          }
+        }
       }
 
-      if (!holder) {
+      if (!holder && !opts.anchor) {
         selector = holderId;
         holder = document.querySelector(selector);
       }
@@ -137,9 +159,9 @@ class DiscourseURL extends EmberObject {
 
       if (holder && opts.skipIfOnScreen) {
         const elementTop = lockOn.elementTop();
-        const scrollTop = $(window).scrollTop();
-        const windowHeight = $(window).height() - offsetCalculator();
-        const height = $(holder).height();
+        const scrollTop = window.scrollY;
+        const windowHeight = window.innerHeight - offsetCalculator();
+        const height = holder.offsetHeight;
 
         if (
           elementTop > scrollTop &&
@@ -210,7 +232,32 @@ class DiscourseURL extends EmberObject {
       return;
     }
 
-    if (Session.currentProp("requiresRefresh") && !this.isComposerOpen) {
+    // In embed mode, open all navigation in new tabs except same-topic navigation
+    if (EmbedMode.enabled) {
+      const currentTopicMatch = TOPIC_URL_REGEXP.exec(window.location.pathname);
+      const currentTopicId = currentTopicMatch ? currentTopicMatch[2] : null;
+      const newTopicMatch = TOPIC_URL_REGEXP.exec(path);
+      const newTopicId = newTopicMatch ? newTopicMatch[2] : null;
+
+      // Allow same-topic navigation (scrolling to different posts)
+      if (currentTopicId && newTopicId && currentTopicId === newTopicId) {
+        // Continue with normal routing for same-topic navigation
+      } else {
+        // Open in new tab for all other navigation
+        window.open(getURL(path), "_blank");
+        return;
+      }
+    }
+
+    let shouldRefresh =
+      Session.currentProp("requiresRefresh") && !this.isComposerOpen;
+    shouldRefresh = applyValueTransformer(
+      "full-page-refresh-on-navigation",
+      shouldRefresh,
+      { url: path }
+    );
+
+    if (shouldRefresh) {
       return this.redirectTo(path);
     }
 
@@ -220,7 +267,10 @@ class DiscourseURL extends EmberObject {
       return this.redirectTo(path);
     }
 
-    const serverSide = SERVER_SIDE_ONLY.some((r) => pathname.match(r));
+    const pathnameWithoutPrefix = withoutPrefix(pathname);
+    const serverSide = SERVER_SIDE_ONLY.some((r) =>
+      pathnameWithoutPrefix.match(r)
+    );
     if (serverSide) {
       this.redirectTo(path);
       return;
@@ -250,6 +300,14 @@ class DiscourseURL extends EmberObject {
       return;
     }
 
+    if (oldPath === path && NESTED_URL_REGEXP.test(path)) {
+      // The nested context view caches its scroll target in the
+      // component's lifecycle, so a plain refresh() wouldn't re-trigger
+      // it. Fire an event the view listens for instead.
+      this.appEvents.trigger("nested:scroll-to-target");
+      return;
+    }
+
     if (oldPath === path || this.refreshedHomepage(oldPath, path)) {
       // If navigating to the same path, refresh the route
       this.routerService.refresh();
@@ -264,19 +322,26 @@ class DiscourseURL extends EmberObject {
   }
 
   routeToUrl(url, opts = {}) {
-    this.routeTo(getURL(url), opts);
+    const transformedUrl = applyValueTransformer("route-to-url", getURL(url), {
+      opts,
+    });
+    this.routeTo(transformedUrl, opts);
   }
 
   rewrite(regexp, replacement, opts) {
     rewrites.push({ regexp, replacement, opts: opts || {} });
   }
 
-  redirectAbsolute(url) {
+  redirectAbsolute(url, { replace = false } = {}) {
     // Redirects will kill a test runner
     if (isTesting()) {
       return true;
     }
-    window.location = url;
+    if (replace) {
+      window.location.replace(url);
+    } else {
+      window.location = url;
+    }
     return true;
   }
 
@@ -337,11 +402,17 @@ class DiscourseURL extends EmberObject {
       const oldMatches = TOPIC_URL_REGEXP.exec(oldPath);
       const oldTopicId = oldMatches ? oldMatches[2] : null;
 
+      // Nested topics use the topic route too, but post-number changes need to
+      // run the route model hook so it can load the nested context payload.
+      const topicController = this.container.lookup("controller:topic");
+      if (topicController.shouldRenderNestedView) {
+        return false;
+      }
+
       // If the topic_id is the same
       if (oldTopicId === newTopicId) {
         this.replaceState(path);
 
-        const topicController = this.container.lookup("controller:topic");
         const opts = {};
         const postStream = topicController.get("model.postStream");
 
@@ -515,26 +586,42 @@ export function prefixProtocol(url) {
   return `https://${url}`;
 }
 
-export function getCategoryAndTagUrl(category, subcategories, tagName) {
+export function isHttpUrl(value) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const { protocol } = new URL(trimmed);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export function getCategoryAndTagUrl(category, subcategories, tag) {
   let url;
 
   if (category) {
     url = category.path;
-    if (category.default_list_filter === "none" && subcategories) {
-      if (subcategories) {
-        url += "/all";
-      } else {
-        url += "/none";
-      }
-    } else if (!subcategories) {
+    if (!subcategories) {
       url += "/none";
+    } else if (category.default_list_filter === "none") {
+      url += "/all";
     }
   }
 
-  if (tagName) {
-    url = url
-      ? "/tags" + url + "/" + tagName.toLowerCase()
-      : "/tag/" + tagName.toLowerCase();
+  if (tag) {
+    // tag can be string "none" (special filter) or object with {id, name, slug}.
+    // A Tag model with a null id also represents the "no tags" filter — handle
+    // it the same as the string form so we don't produce ".../none/null" URLs.
+    const isString = typeof tag === "string";
+    const slug = isString ? tag : tag.slug;
+    const id = isString ? null : tag.id;
+
+    const prefix = url ? `/tags${url}` : "/tag";
+    url = id ? `${prefix}/${slug}/${id}` : `${prefix}/${slug}`;
   }
 
   return getURL(url || "/");
@@ -547,6 +634,44 @@ export function getEditCategoryUrl(category, subcategories, tab) {
     url += `/${tab}`;
   }
   return getURL(url);
+}
+
+// These helpers operate on app-relative paths like `RouterService#currentURL`
+// ("/admin/badges?filter=x"), which the URL API cannot parse on its own.
+
+function splitPath(path) {
+  const hashIndex = path.indexOf("#");
+  const withoutHash = hashIndex === -1 ? path : path.slice(0, hashIndex);
+  const hash = hashIndex === -1 ? "" : path.slice(hashIndex);
+  const queryIndex = withoutHash.indexOf("?");
+
+  return {
+    pathname:
+      queryIndex === -1 ? withoutHash : withoutHash.slice(0, queryIndex),
+    query: queryIndex === -1 ? "" : withoutHash.slice(queryIndex + 1),
+    hash,
+  };
+}
+
+export function searchParamsFromPath(path) {
+  const { query } = splitPath(path || "");
+  return new URLSearchParams(query);
+}
+
+export function applyQueryParams(path, params) {
+  const { pathname, query, hash } = splitPath(path || "/");
+
+  const searchParams = new URLSearchParams(query);
+  for (const [name, value] of Object.entries(params)) {
+    if (value) {
+      searchParams.set(name, value);
+    } else {
+      searchParams.delete(name);
+    }
+  }
+
+  const queryString = searchParams.toString();
+  return pathname + (queryString ? `?${queryString}` : "") + hash;
 }
 
 export function getCanonicalUrl(absoluteUrl) {

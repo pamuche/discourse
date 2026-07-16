@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-describe "Admin Color Palettes Config Area Page", type: :system do
-  fab!(:admin)
+describe "Admin Color Palettes Config Area Page" do
+  fab!(:admin) { Fabricate(:admin, locale: "en") }
   fab!(:palette) { Fabricate(:color_scheme, user_selectable: false, name: "A Test Palette") }
   fab!(:theme) { Fabricate(:theme, name: "Test Theme") }
   fab!(:user_selectable_palette) do
@@ -101,13 +101,13 @@ describe "Admin Color Palettes Config Area Page", type: :system do
     it "shows filters when there are more than 8 color schemes" do
       config_area.visit
 
-      expect(page).to have_css(".admin-filter-controls__input")
+      expect(page).to have_css(".d-filter-controls__input")
     end
 
     it "can filter by text search" do
       config_area.visit
 
-      find(".admin-filter-controls__input").fill_in(with: user_selectable_palette.name)
+      find(".d-filter-controls__input").fill_in(with: user_selectable_palette.name)
 
       expect(page).to have_css("[data-palette-id='#{user_selectable_palette.id}']")
       expect(page).to have_no_css("[data-palette-id='#{regular_palette.id}']")
@@ -127,10 +127,10 @@ describe "Admin Color Palettes Config Area Page", type: :system do
     it "shows no results state" do
       config_area.visit
 
-      find(".admin-filter-controls__input").fill_in(with: "bananas")
+      find(".d-filter-controls__input").fill_in(with: "bananas")
 
-      expect(page).to have_css(".admin-filter-controls__no-results")
-      expect(page).to have_css("button", text: I18n.t("admin_js.reset_filter"))
+      expect(page).to have_css(".d-filter-controls__no-results")
+      expect(page).to have_css("button", text: I18n.t("js.filter_controls.reset"))
     end
   end
 
@@ -248,7 +248,7 @@ describe "Admin Color Palettes Config Area Page", type: :system do
     end
 
     it "shows toast when admin cannot see live preview" do
-      custom_scheme = Fabricate(:color_scheme, name: "Custom Scheme")
+      custom_scheme = Fabricate(:color_scheme, name: "Custom Scheme", user_selectable: true)
       admin.user_option.update!(
         theme_ids: [Theme.find_default.id],
         color_scheme_id: custom_scheme.id,
@@ -319,7 +319,7 @@ describe "Admin Color Palettes Config Area Page", type: :system do
           "Horizon scheme b",
           "Foundation scheme a",
           "Foundation scheme b",
-          "Light (default)",
+          I18n.t("admin_js.admin.customize.theme.default_light_scheme"),
         ],
       )
     end
@@ -330,7 +330,7 @@ describe "Admin Color Palettes Config Area Page", type: :system do
       color_schemes = page.all(".color-palette__details h3").map(&:text)
       expect(color_schemes).to eq(
         [
-          "Light (default)",
+          I18n.t("admin_js.admin.customize.theme.default_light_scheme"),
           "Selectable custom scheme a",
           "Selectable custom scheme b",
           "Selectable foundation scheme a",

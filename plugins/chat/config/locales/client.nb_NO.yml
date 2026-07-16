@@ -12,14 +12,21 @@ nb_NO:
           always: "Alltid"
           never: "Aldri"
     chat:
+      edit_category:
+        channel: "Kanal"
+        description: "Beskrivelse"
+        actions: "Handlinger"
+        settings: "Innstillinger"
       deleted_chat_username: slettet
       dates:
         yesterday: "I går"
       create: "Opprett"
       cancel: "Avbryt"
+      pinned: "Fastsatt"
       channel_settings:
         edit: "Endre"
         add: "Legg til"
+        notification_settings_context: "Varsler"
         join: "Bli medlem"
         leave: "Forlat"
       close: "Lukk"
@@ -78,6 +85,7 @@ nb_NO:
           one: "%{count} medlem"
           other: "%{count} medlemmer"
       create_channel:
+        description: "Beskrivelse"
         type: "Type"
         types:
           category: "Kategori"
@@ -170,3 +178,12 @@ nb_NO:
           fields:
             message:
               label: Send
+    discourse_workflows:
+      chat_message_created:
+        channel_id: "Kanal"
+      send_chat_message:
+        channel_id: "Kanal"
+        message: "Send"
+      chat_approval:
+        message: "Send"
+        channel_id: "Kanal"

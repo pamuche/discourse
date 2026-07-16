@@ -1,22 +1,36 @@
 # frozen_string_literal: true
 
 module LocalizationAttributesReplacer
-  def self.replace_category_attributes(category, crawl_locale)
-    if loc = get_localization(category, crawl_locale)
+  def self.localize_category(category, locale)
+    if loc = get_localization(category, locale)
       category.name = loc.name if loc.name.present?
-      category.description = loc.description if loc.description.present?
+      localized_description = loc.description_first_paragraph
+      category.description = localized_description if localized_description.present?
     end
+  end
+
+  def self.replace_category_attributes(category, crawl_locale)
+    localize_category(category, crawl_locale)
 
     while category = category.parent_category
-      replace_category_attributes(category, crawl_locale)
+      localize_category(category, crawl_locale)
     end
   end
 
   def self.replace_topic_attributes(topic, crawl_locale)
     if loc = get_localization(topic, crawl_locale)
       # assigning directly to title would commit the change to the database
-      # due to the setter method defined in the Topic model
-      topic.send(:write_attribute, :title, loc.title) if loc.title.present?
+      # due to the setter method defined in the Topic model.
+      # fancy_title must also be set to prevent the lazy DB write in
+      # Topic#fancy_title from persisting a localized value when fancy_title is NULL.
+      if loc.title.present?
+        topic.send(:write_attribute, :title, loc.title)
+        topic.send(
+          :write_attribute,
+          :fancy_title,
+          loc.fancy_title.presence || Topic.fancy_title(loc.title),
+        )
+      end
       topic.excerpt = loc.excerpt if loc.excerpt.present?
     end
 

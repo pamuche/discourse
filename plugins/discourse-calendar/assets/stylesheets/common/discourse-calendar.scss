@@ -13,9 +13,11 @@ a.holiday {
 }
 
 .grouped-event {
-  background-color: var(--primary-low);
-  border: 1px solid var(--primary-low-mid);
-  color: var(--primary);
+  --fc-event-bg-color: var(--primary-low);
+  --fc-event-border-color: var(--primary-low-mid);
+  --fc-event-text-color: var(--primary);
+  background-color: var(--fc-event-bg-color);
+  border: 1px solid var(--fc-event-border-color);
 }
 
 .group-timezones {
@@ -278,12 +280,4 @@ a.holiday {
   .mobile-view & {
     z-index: z("modal", "dropdown");
   }
-}
-
-.discourse-post-event-loader {
-  width: 200px;
-  height: 100px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }

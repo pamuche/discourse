@@ -41,9 +41,9 @@ class ApplicationLayoutPreloader
     self
       .class
       .banner_json_cache
-      .defer_get_set("json") do
+      .defer_get_set("json_#{I18n.locale}") do
         topic = Topic.where(archetype: Archetype.banner).first
-        banner = topic.present? ? topic.banner(@guardian) : {}
+        banner = topic.present? && !topic.category&.read_restricted? ? topic.banner(@guardian) : {}
         MultiJson.dump(banner)
       end
   end
@@ -136,7 +136,14 @@ class ApplicationLayoutPreloader
     id = @theme_id
     return "{}" if id.blank?
     ids = Theme.transform_ids(id)
-    Theme.where(id: ids).pluck(:id, :name).to_h.to_json
+    Theme
+      .where(id: ids)
+      .each_with_object({}) do |theme, hash|
+        settings = theme.cached_settings
+        settings = theme.resolve_group_settings_for_user(settings, @guardian)
+        hash[theme.id] = { name: theme.name, settings: settings.except("theme_setting_type_info") }
+      end
+      .to_json
   end
 
   def load_font_map

@@ -1,29 +1,36 @@
+/* eslint-disable ember/no-tracked-properties-from-args */
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
-import { concat } from "@ember/helper";
+import { hash } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
+import { LinkTo } from "@ember/routing";
 import { cancel } from "@ember/runloop";
 import { service } from "@ember/service";
-import { htmlSafe } from "@ember/template";
+import { capitalize } from "@ember/string";
+import { trustHTML } from "@ember/template";
 import { modifier } from "ember-modifier";
-import DButton from "discourse/components/d-button";
-import DSelect from "discourse/components/d-select";
+import UpcomingChangeBadges from "discourse/admin/components/admin-config-areas/upcoming-change-badges";
+import linkifySettingLinks from "discourse/admin/modifiers/linkify-setting-links";
 import GroupSelector from "discourse/components/group-selector";
 import DTooltip from "discourse/float-kit/components/d-tooltip";
-import concatClass from "discourse/helpers/concat-class";
-import icon from "discourse/helpers/d-icon";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { AUTO_GROUPS } from "discourse/lib/constants";
 import { bind } from "discourse/lib/decorators";
 import discourseLater from "discourse/lib/later";
 import lightbox from "discourse/lib/lightbox";
+import { sanitize } from "discourse/lib/text";
 import Group from "discourse/models/group";
 import { eq } from "discourse/truth-helpers";
+import DButton from "discourse/ui-kit/d-button";
+import DSelect from "discourse/ui-kit/d-select";
+import dBasePath from "discourse/ui-kit/helpers/d-base-path";
+import dIcon from "discourse/ui-kit/helpers/d-icon";
 import { i18n } from "discourse-i18n";
 
 export default class UpcomingChangeItem extends Component {
+  @service site;
   @service toasts;
 
   @tracked bufferedGroups = this.args.change.groups;
@@ -40,49 +47,102 @@ export default class UpcomingChangeItem extends Component {
     cancel(this._savingEnabledForTimeout);
   }
 
-  impactRoleIcon(impactRole) {
-    switch (impactRole) {
-      case "admins":
-        return "shield-halved";
-      case "moderators":
-        return "shield-halved";
-      case "staff":
-        return "shield-halved";
-      case "all_members":
-        return "users";
-      case "developers":
-        return "code";
-    }
-  }
-
   get enabledForOptions() {
-    return [
+    const allow = this.args.change.upcoming_change.allow_enabled_for ?? [
+      "everyone",
+      "staff",
+      "specific_groups",
+    ];
+
+    const options = [
       {
         label: i18n("admin.upcoming_changes.enabled_for_options.no_one"),
         value: "no_one",
       },
-      {
+    ];
+
+    if (allow.includes("everyone")) {
+      options.push({
         label: i18n("admin.upcoming_changes.enabled_for_options.everyone"),
         value: "everyone",
-      },
-      {
-        label: i18n("admin.upcoming_changes.enabled_for_options.staff"),
-        value: "staff",
-      },
-      {
+      });
+    }
+
+    if (allow.includes("staff")) {
+      options.push({
+        label: capitalize(this.staffGroupName),
+        value: this.staffGroupName,
+      });
+    }
+
+    if (allow.includes("specific_groups")) {
+      options.push({
         label: i18n(
           "admin.upcoming_changes.enabled_for_options.specific_groups"
         ),
         value: "groups",
-      },
-    ];
+      });
+    }
+
+    return options;
+  }
+
+  get staffGroupName() {
+    return this.site.groupsById[AUTO_GROUPS.staff.id].name;
   }
 
   get enabledForDisabled() {
+    return this.savingEnabledFor;
+  }
+
+  get showPermanentSoonNotice() {
     return (
-      this.args.change.upcoming_change.status === "permanent" ||
-      this.savingEnabledFor
+      this.args.change.upcoming_change.status === "stable" &&
+      this.args.change.upcoming_change.permanent_warning !== false
     );
+  }
+
+  get showDependsOnNotice() {
+    return (
+      this.args.change.depends_on?.length > 0 &&
+      !this.args.change.depends_on_met
+    );
+  }
+
+  get dependsOnNoticeText() {
+    const path = dBasePath();
+    const links = this.args.change.depends_on
+      .map((name, index) => {
+        const label = sanitize(
+          this.args.change.depends_on_humanized_names?.[index] ||
+            name.replaceAll("_", " ")
+        );
+        return `<a href="${path}/admin/site_settings/category/all_results?filter=${encodeURIComponent(name)}">${label}</a>`;
+      })
+      .join(", ");
+
+    return trustHTML(
+      i18n("admin.upcoming_changes.depends_on_notice", {
+        dependencyLinks: links,
+      })
+    );
+  }
+
+  get showDependentSettingsLink() {
+    return (
+      this.args.change.dependents.length && this.bufferedEnabledFor !== "no_one"
+    );
+  }
+
+  get showDefaultOverrideSettingLink() {
+    return (
+      this.args.change.overriding_defaults &&
+      this.bufferedEnabledFor !== "no_one"
+    );
+  }
+
+  get defaultOverrideSettingFilter() {
+    return `upcoming_change_default_override:${this.args.change.setting}`;
   }
 
   @action
@@ -174,9 +234,10 @@ export default class UpcomingChangeItem extends Component {
       enabledForLabel = i18n(
         "admin.upcoming_changes.enabled_for_options.everyone"
       );
-    } else if (enabledFor === "staff") {
+    } else if (enabledFor === this.staffGroupName) {
       enabledForLabel = i18n(
-        "admin.upcoming_changes.enabled_for_options.staff"
+        "admin.upcoming_changes.enabled_for_options.staff",
+        { staffGroupName: capitalize(this.staffGroupName) }
       );
     } else if (enabledFor === "groups") {
       const groupNames = this.bufferedGroups.split(",");
@@ -228,15 +289,17 @@ export default class UpcomingChangeItem extends Component {
     const isEnabled = newValue !== "no_one";
 
     try {
-      await this.toggleChange(isEnabled, newValue);
-
-      if (newValue === "staff") {
-        this.groupsChanged(AUTO_GROUPS.staff.name);
-      } else if (newValue === "everyone" || newValue === "no_one") {
+      if (newValue === this.staffGroupName) {
+        this.groupsChanged(this.staffGroupName);
+        await this.saveGroups({ silenceToast: true });
+        await this.toggleChange(isEnabled, newValue);
+      } else {
+        await this.toggleChange(isEnabled, newValue);
         this.groupsChanged("");
+        await this.saveGroups({ silenceToast: true });
       }
 
-      await this.saveGroups({ silenceToast: true });
+      this.args.enabledForChanged?.(this.args.change.setting, newValue);
     } catch (error) {
       this.bufferedEnabledFor = oldValue;
       popupAjaxError(error);
@@ -259,7 +322,7 @@ export default class UpcomingChangeItem extends Component {
       <td class="d-table__cell --overview">
         {{#if @change.plugin}}
           <span class="upcoming-change__plugin">
-            {{icon "plug"}}
+            {{dIcon "plug"}}
             {{@change.plugin}}
           </span>
         {{/if}}
@@ -269,8 +332,11 @@ export default class UpcomingChangeItem extends Component {
         </div>
 
         {{#if @change.description}}
-          <div class="d-table__overview-about upcoming-change__description">
-            {{@change.description}}
+          <div
+            class="d-table__overview-about upcoming-change__description"
+            {{linkifySettingLinks @change.description}}
+          >
+            {{trustHTML @change.description}}
 
             <div
               class="upcoming-change__description-details"
@@ -284,15 +350,15 @@ export default class UpcomingChangeItem extends Component {
                   data-target-width={{@change.upcoming_change.image.width}}
                   data-target-height={{@change.upcoming_change.image.height}}
                   data-large-src={{@change.upcoming_change.image.url}}
-                >{{icon "far-image"}}
+                >{{dIcon "far-image"}}
                   {{i18n "admin.upcoming_changes.preview"}}</a>
               {{/if}}
 
               {{#if @change.upcoming_change.learn_more_url}}
                 <span class="upcoming-change__learn-more">
-                  {{htmlSafe
+                  {{trustHTML
                     (i18n
-                      "learn_more_with_link"
+                      "feedback_with_link"
                       url=@change.upcoming_change.learn_more_url
                     )
                   }}
@@ -302,62 +368,21 @@ export default class UpcomingChangeItem extends Component {
           </div>
         {{/if}}
 
-        {{#if (eq @change.upcoming_change.status "permanent")}}
-          <div class="upcoming-change__permanent-notice">
-            {{icon "triangle-exclamation"}}
-            {{i18n "admin.upcoming_changes.permanent_notice"}}
+        {{#if this.showDependsOnNotice}}
+          <div class="upcoming-change__depends-on-notice">
+            {{dIcon "triangle-exclamation"}}
+            {{this.dependsOnNoticeText}}
           </div>
         {{/if}}
 
-        <div class="upcoming-change__badges">
-          <span
-            title={{i18n
-              (concat
-                "admin.upcoming_changes.statuses."
-                @change.upcoming_change.status
-              )
-            }}
-            class={{concatClass
-              "upcoming-change__badge"
-              (concat "--status-" @change.upcoming_change.status)
-            }}
-          >
-            {{icon
-              (if
-                (eq @change.upcoming_change.status "permanent")
-                "lock"
-                "far-circle-dot"
-              )
-            }}
-            {{i18n
-              (concat
-                "admin.upcoming_changes.statuses."
-                @change.upcoming_change.status
-              )
-            }}
-          </span>
+        {{#if this.showPermanentSoonNotice}}
+          <div class="upcoming-change__status-notice">
+            {{dIcon "triangle-exclamation"}}
+            {{i18n "admin.upcoming_changes.permanent_soon_notice"}}
+          </div>
+        {{/if}}
 
-          <span
-            title={{i18n
-              (concat
-                "admin.upcoming_changes.impact_roles."
-                @change.upcoming_change.impact_role
-              )
-            }}
-            class={{concatClass
-              "upcoming-change__badge"
-              (concat "--impact-role-" @change.upcoming_change.impact_role)
-            }}
-          >
-            {{icon (this.impactRoleIcon @change.upcoming_change.impact_role)}}
-            {{i18n
-              (concat
-                "admin.upcoming_changes.impact_roles."
-                @change.upcoming_change.impact_role
-              )
-            }}
-          </span>
-        </div>
+        <UpcomingChangeBadges @upcomingChange={{@change.upcoming_change}} />
       </td>
       <td class="d-table__cell --detail upcoming-change__toggle-cell">
         <div class="d-table__mobile-label">
@@ -374,22 +399,41 @@ export default class UpcomingChangeItem extends Component {
         >
           {{#each this.enabledForOptions as |option|}}
             <select.Option @value={{option.value}}>
-              {{option.label}}</select.Option>
+              {{option.label}}
+            </select.Option>
           {{/each}}
         </DSelect>
 
+        {{#if this.showDependentSettingsLink}}
+          <div class="upcoming-change__dependents">
+            <LinkTo
+              @route="adminSiteSettings"
+              @query={{hash filter="all_results" dependsOn=@change.setting}}
+            >
+              {{i18n "admin.upcoming_changes.show_related_settings"}}
+            </LinkTo>
+          </div>
+        {{/if}}
+
+        {{#if this.showDefaultOverrideSettingLink}}
+          <div class="upcoming-change__default-override-setting">
+            <LinkTo
+              @route="adminSiteSettings"
+              @query={{hash filter=this.defaultOverrideSettingFilter}}
+            >
+              {{i18n "admin.upcoming_changes.show_related_settings"}}
+            </LinkTo>
+          </div>
+        {{/if}}
+
         {{#if (eq this.bufferedEnabledFor "groups")}}
           <div class="upcoming-change__group-selection-wrapper">
-            {{#if (eq @change.upcoming_change.status "permanent")}}
-              {{i18n "admin.upcoming_changes.permanent_no_group_selection"}}
-            {{else}}
-              <GroupSelector
-                @groupFinder={{this.groupFinder}}
-                @groupNames={{this.bufferedGroups}}
-                @onChange={{this.groupsChanged}}
-                @placeholderKey="admin.upcoming_changes.select_groups"
-              />
-            {{/if}}
+            <GroupSelector
+              @groupFinder={{this.groupFinder}}
+              @groupNames={{this.bufferedGroups}}
+              @onChange={{this.groupsChanged}}
+              @placeholderKey="admin.upcoming_changes.select_groups"
+            />
 
             {{#if this.bufferedGroupsDirty}}
               <DButton

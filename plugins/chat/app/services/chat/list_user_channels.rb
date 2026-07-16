@@ -15,6 +15,7 @@ module Chat
 
     model :structured
     step :inject_unread_thread_overview
+    step :inject_has_threads
     model :post_allowed_category_ids, optional: true
 
     private
@@ -23,7 +24,21 @@ module Chat
       ::Chat::ChannelFetcher.structured(guardian)
     end
 
+    def inject_has_threads(structured:, guardian:)
+      if guardian.anonymous?
+        structured[:has_threads] = false
+        return
+      end
+
+      structured[:has_threads] = ::Chat::Thread.viewable_by_user(guardian.user).exists?
+    end
+
     def inject_unread_thread_overview(structured:, guardian:)
+      if guardian.anonymous?
+        structured[:unread_thread_overview] = {}
+        return
+      end
+
       channel_ids =
         structured[:public_channels].map(&:id) + structured[:direct_message_channels].map(&:id)
       structured[:unread_thread_overview] = ::Chat::TrackingStateReportQuery.call(

@@ -1,12 +1,10 @@
-import { ajax } from "discourse/lib/ajax";
+import { service } from "@ember/service";
 import DiscourseRoute from "discourse/routes/discourse";
 
 export default class AdminDashboardReportsRoute extends DiscourseRoute {
-  model() {
-    return ajax("/admin/reports");
-  }
+  @service router;
 
-  setupController(controller, model) {
-    controller.setProperties({ model: model.reports, filter: null });
+  beforeModel() {
+    this.router.replaceWith("adminReports");
   }
 }

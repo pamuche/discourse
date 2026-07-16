@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "target": "es2021",
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "module": "es2022",
+    "moduleResolution": "bundler",
     "experimentalDecorators": true,
     "allowJs": true,
     "skipLibCheck": true,
@@ -11,6 +11,6 @@
     "declaration": true,
     "outDir": "declarations",
     "composite": true,
-    "types": ["discourse/external-types"],
+    "typeRoots": ["./external-types"]
   }
 }

@@ -1,8 +1,8 @@
 import Component from "@glimmer/component";
 import { concat, get } from "@ember/helper";
 import { action } from "@ember/object";
-import { htmlSafe } from "@ember/template";
-import replaceEmoji from "discourse/helpers/replace-emoji";
+import { trustHTML } from "@ember/template";
+import dReplaceEmoji from "discourse/ui-kit/helpers/d-replace-emoji";
 import { i18n } from "discourse-i18n";
 
 export default class Reactions extends Component {
@@ -33,7 +33,7 @@ export default class Reactions extends Component {
 
   @action
   computePercentageStyle(count) {
-    return htmlSafe(`width: ${this.computePercentage(count)}`);
+    return trustHTML(`width: ${this.computePercentage(count)}`);
   }
 
   <template>
@@ -45,7 +45,7 @@ export default class Reactions extends Component {
         {{#each-in this.receivedReactions as |emojiName count|}}
           <div class="rewind-card scale">
             <span class="rewind-card__emoji">
-              {{replaceEmoji (concat ":" emojiName ":")}}
+              {{dReplaceEmoji (concat ":" emojiName ":")}}
             </span>
             <span class="rewind-card__data">{{count}}</span>
           </div>
@@ -62,7 +62,7 @@ export default class Reactions extends Component {
           {{#each this.sortedUsedReactions as |reaction|}}
             <div class="rewind-reactions-row">
               <span class="emoji">
-                {{replaceEmoji (concat ":" (get reaction "0") ":")}}
+                {{dReplaceEmoji (concat ":" (get reaction "0") ":")}}
               </span>
               <span class="percentage">{{this.computePercentage
                   (get reaction "1")

@@ -119,6 +119,37 @@ describe PostRevisor do
       expect(post.reload.topic.category_id).to eq(new_category.id)
     end
 
+    it "allows category change with localized tags" do
+      SiteSetting.create_tag_allowed_groups = Group::AUTO_GROUPS[:trust_level_0]
+      SiteSetting.tag_topic_allowed_groups = Group::AUTO_GROUPS[:trust_level_0]
+
+      tag = Fabricate(:tag)
+      tag_group = Fabricate(:tag_group, tags: [tag])
+      old_category = Fabricate(:category)
+      new_category = Fabricate(:category, tag_groups: [tag_group])
+
+      post = create_post(category: old_category)
+
+      post.revise(post.user, category_id: new_category.id, tags: [{ id: tag.id, name: tag.name }])
+      expect(post.reload.topic.category_id).to eq(new_category.id)
+    end
+
+    it "allows category change when clearing all tags with an empty array" do
+      SiteSetting.create_tag_allowed_groups = Group::AUTO_GROUPS[:trust_level_0]
+      SiteSetting.tag_topic_allowed_groups = Group::AUTO_GROUPS[:trust_level_0]
+
+      tag = Fabricate(:tag)
+      old_category = Fabricate(:category)
+      new_category = Fabricate(:category)
+
+      post = create_post(category: old_category, tags: [tag.name])
+      expect(post.topic.tags).to contain_exactly(tag)
+
+      post.revise(post.user, category_id: new_category.id, tags: [])
+      expect(post.reload.topic.category_id).to eq(new_category.id)
+      expect(post.topic.tags).to be_empty
+    end
+
     it "returns an error if the topic does not have minimum amount of tags that the new category requires" do
       SiteSetting.create_tag_allowed_groups = Group::AUTO_GROUPS[:trust_level_0]
       SiteSetting.tag_topic_allowed_groups = Group::AUTO_GROUPS[:trust_level_0]
@@ -225,6 +256,45 @@ describe PostRevisor do
       SiteSetting.create_post_for_category_and_tag_changes = false
 
       expect { post_revisor.revise!(admin, tags: ["new-tag"]) }.not_to change { Post.count }
+    end
+
+    it "edits a topic's tags" do
+      tag = Fabricate(:tag)
+      post_revisor.revise!(admin, tags: [{ id: tag.id, name: "outdated" }])
+      expect(post.topic.reload.tags).to contain_exactly(tag)
+
+      post_revisor.revise!(admin, tags: ["a-whole-new-tag"])
+      expect(post.topic.reload.tags).to match_array([have_attributes(name: "a-whole-new-tag")])
+    end
+
+    it "does not create an empty revision when only synonyms of existing tags are submitted" do
+      canonical = Fabricate(:tag, name: "apple-inc")
+      aapl = Fabricate(:tag, name: "aapl", target_tag: canonical)
+      appl = Fabricate(:tag, name: "appl", target_tag: canonical)
+      post.topic.tags << canonical
+
+      expect do
+        post_revisor.revise!(
+          admin,
+          tags: [
+            { id: aapl.id, name: "aapl" },
+            { id: appl.id, name: "appl" },
+            { id: canonical.id, name: "apple-inc" },
+          ],
+        )
+      end.not_to change { PostRevision.count }
+      expect(post.topic.reload.tags).to contain_exactly(canonical)
+    end
+
+    it "does not create an empty revision when synonym names are submitted as strings" do
+      canonical = Fabricate(:tag, name: "tesla-inc")
+      Fabricate(:tag, name: "tsla", target_tag: canonical)
+      post.topic.tags << canonical
+
+      expect do post_revisor.revise!(admin, tags: %w[tsla tesla-inc]) end.not_to change {
+        PostRevision.count
+      }
+      expect(post.topic.reload.tags).to contain_exactly(canonical)
     end
 
     describe "when `create_post_for_category_and_tag_changes` site setting is enabled" do
@@ -344,13 +414,13 @@ describe PostRevisor do
       expect(post.locale).to eq("ja")
     end
 
-    it "also updates the topic's locale if first post" do
-      post = Fabricate(:post)
+    it "keeps the topic locale unchanged when editing the first post locale" do
+      post = Fabricate(:post, locale: "en")
+      post.topic.update!(locale: "fr")
 
       PostRevisor.new(post).revise!(post.user, locale: "ja")
 
-      post.reload
-      expect(post.topic.locale).to eq("ja")
+      expect(post.topic.reload.locale).to eq("fr")
     end
   end
 
@@ -524,6 +594,32 @@ describe PostRevisor do
         expect(post.revisions.count).to eq(1)
       end
 
+      it "creates a new version when diff computation exceeds the comparison budget" do
+        SiteSetting.editing_grace_period = 1.minute
+        SiteSetting.editing_grace_period_max_diff = 1_000
+
+        post = Fabricate(:post, raw: "hello world")
+        revisor = PostRevisor.new(post)
+
+        ONPDiff
+          .any_instance
+          .stubs(:short_diff)
+          .raises(
+            ONPDiff::DiffLimitExceeded.new(
+              comparisons_used: 2_000_001,
+              comparison_budget: 2_000_000,
+              left_size: 11,
+              right_size: 12,
+            ),
+          )
+
+        revisor.revise!(post.user, { raw: "hello world!" }, revised_at: post.updated_at + 1.second)
+
+        post.reload
+        expect(post.version).to eq(2)
+        expect(post.revisions.count).to eq(1)
+      end
+
       it "creates a new version when the post is flagged" do
         SiteSetting.editing_grace_period = 1.minute
 
@@ -564,6 +660,17 @@ describe PostRevisor do
 
         expect(post.version).to eq(1)
         expect(post.public_version).to eq(1)
+        expect(post.revisions.size).to eq(0)
+      end
+
+      it "does not create a new version for tag-only topic change within grace period when tags unchanged" do
+        SiteSetting.tagging_enabled = true
+        SiteSetting.editing_grace_period = 1.minute
+
+        post_revisor.revise!(post.user, { tags: [] }, revised_at: post.updated_at + 10.seconds)
+        post.reload
+
+        expect(post.version).to eq(1)
         expect(post.revisions.size).to eq(0)
       end
     end
@@ -954,6 +1061,19 @@ describe PostRevisor do
           expect(events).to include(event_name: :before_edit_post, params: [post, params])
         end
       end
+
+      context "when editing the post_edited event signature for extensibility" do
+        it "exposes revise opts via the PostRevisor payload" do
+          params = { raw: "body (edited)" }
+          opts = { suggested_edit: true }
+
+          events = DiscourseEvent.track_events { post_revisor.revise!(user, params, opts) }
+          event = events.find { |e| e[:event_name] == :post_edited }
+
+          expect(event[:params].third).to be_kind_of(PostRevisor)
+          expect(event[:params].third.opts).to include(suggested_edit: true)
+        end
+      end
     end
 
     describe "topic excerpt" do
@@ -1024,11 +1144,11 @@ describe PostRevisor do
       expect(post_revisor.raw_changed?).to eq(false)
     end
 
-    it "revises and tracks changes of topic archetypes" do
+    it "revises and tracks changes of topic archetypes for staff" do
       new_archetype = Archetype.banner
       result =
         post_revisor.revise!(
-          post.user,
+          admin,
           { archetype: new_archetype },
           revised_at: post.updated_at + 10.minutes,
         )
@@ -1040,18 +1160,66 @@ describe PostRevisor do
       expect(post_revisor.raw_changed?).to eq(false)
     end
 
+    it "does not allow regular users to change topic archetype to banner" do
+      result =
+        post_revisor.revise!(
+          post.user,
+          { archetype: Archetype.banner },
+          revised_at: post.updated_at + 10.minutes,
+        )
+
+      expect(result).to eq(false)
+      post.reload
+      expect(post.topic.archetype).to eq(Archetype.default)
+    end
+
     it "revises and tracks changes of topic tags" do
       post_revisor.revise!(admin, tags: ["new-tag"])
       expect(post.post_revisions.last.modifications).to eq("tags" => [[], ["new-tag"]])
       expect(post_revisor.raw_changed?).to eq(false)
 
       post_revisor.revise!(admin, tags: %w[new-tag new-tag-2])
-      expect(post.post_revisions.last.modifications).to eq("tags" => [[], %w[new-tag new-tag-2]])
+      before, after = post.post_revisions.last.modifications["tags"]
+      expect(before).to contain_exactly("new-tag")
+      expect(after).to contain_exactly("new-tag", "new-tag-2")
       expect(post_revisor.raw_changed?).to eq(false)
 
       post_revisor.revise!(admin, tags: ["new-tag-3"])
-      expect(post.post_revisions.last.modifications).to eq("tags" => [[], ["new-tag-3"]])
+      before, after = post.post_revisions.last.modifications["tags"]
+      expect(before).to contain_exactly("new-tag", "new-tag-2")
+      expect(after).to contain_exactly("new-tag-3")
       expect(post_revisor.raw_changed?).to eq(false)
+    end
+
+    it "tracks tag changes by IDs (integers) with revision storing names" do
+      tag1 = Fabricate(:tag, name: "existing-tag")
+      tag2 = Fabricate(:tag, name: "another-tag")
+
+      post.topic.update!(tags: [tag1])
+
+      post_revisor.revise!(admin, tags: [{ id: tag2.id, name: tag2.name }])
+
+      modifications = post.post_revisions.last.modifications
+      expect(modifications["tags"]).to eq([["existing-tag"], ["another-tag"]])
+    end
+
+    it "tracks tag changes from empty to tagged using objects" do
+      tag = Fabricate(:tag, name: "new-via-id")
+
+      post_revisor.revise!(admin, tags: [{ id: tag.id, name: tag.name }])
+
+      modifications = post.post_revisions.last.modifications
+      expect(modifications["tags"]).to eq([[], ["new-via-id"]])
+    end
+
+    it "tracks tag changes from tagged to empty" do
+      tag = Fabricate(:tag, name: "will-remove")
+      post.topic.update!(tags: [tag])
+
+      post_revisor.revise!(admin, tags: [])
+
+      modifications = post.post_revisions.last.modifications
+      expect(modifications["tags"]).to eq([["will-remove"], []])
     end
 
     describe "#publish_changes" do
@@ -1338,7 +1506,7 @@ describe PostRevisor do
             expect(event[:params].first).to eq(post)
             expect(event[:params].second).to eq(true)
             expect(event[:params].third).to be_kind_of(PostRevisor)
-            expect(event[:params].third.topic_diff).to eq({ "tags" => [%w[super stuff], []] })
+            expect(event[:params].third.topic_diff).to eq({ "tags" => [%w[stuff super], []] })
           end
 
           context "with staff-only tags" do
@@ -1386,17 +1554,15 @@ describe PostRevisor do
           end
 
           context "with hidden tags" do
+            fab!(:super_tag) { Fabricate(:tag, name: "super") }
+            fab!(:stuff_tag) { Fabricate(:tag, name: "stuff") }
             let(:bumped_at) { 1.day.ago }
 
             before do
               topic.update!(bumped_at: bumped_at)
               create_hidden_tags(%w[important secret])
               topic = post.topic
-              topic.tags = [
-                Fabricate(:tag, name: "super"),
-                Tag.where(name: "important").first,
-                Fabricate(:tag, name: "stuff"),
-              ]
+              topic.tags = [super_tag, Tag.where(name: "important").first, stuff_tag]
             end
 
             it "creates a hidden revision" do
@@ -1413,6 +1579,42 @@ describe PostRevisor do
               post.reload
               expect(post.version).to eq(2)
               expect(post.public_version).to eq(1)
+            end
+
+            it "doesn't decrement public_version when hidden revision is destroyed" do
+              original_tags = topic.tags.map(&:name)
+              post_revisor.revise!(admin, raw: post.raw, tags: original_tags + ["secret"])
+              post.reload
+              expect(post.version).to eq(2)
+              expect(post.public_version).to eq(1)
+              expect(post.revisions.count).to eq(1)
+
+              post_revisor.revise!(admin, raw: post.raw, tags: original_tags)
+              post.reload
+              expect(post.version).to eq(1)
+              expect(post.public_version).to eq(1)
+              expect(post.revisions.count).to eq(0)
+            end
+
+            it "creates a separate revision when a different user changes hidden tags instead of folding into the first author's revision" do
+              admin_a = Fabricate(:admin)
+              admin_b = Fabricate(:admin)
+              original_tags = topic.tags.map(&:name)
+
+              PostRevisor.new(post.reload).revise!(
+                admin_a,
+                raw: post.raw,
+                tags: original_tags + ["secret"],
+              )
+              post.reload
+              expect(post.version).to eq(2)
+              expect(post.revisions.last.user_id).to eq(admin_a.id)
+
+              PostRevisor.new(post.reload).revise!(admin_b, raw: post.raw, tags: original_tags)
+              post.reload
+              expect(post.version).to eq(3)
+              expect(post.revisions.count).to eq(2)
+              expect(post.revisions.last.user_id).to eq(admin_b.id)
             end
 
             it "increments public_version when hidden tag added with other visible changes" do
@@ -1752,7 +1954,73 @@ describe PostRevisor do
               { raw: "updated body" },
               revised_at: post.updated_at + SiteSetting.editing_grace_period + 1.second,
             )
-          }.to change { post.topic.bumped_at }
+          }.to change { post.topic.reload.bumped_at }
+        end
+
+        it "bumps the persisted topic when editing raw and title" do
+          post.topic.update!(bumped_at: 1.day.ago)
+
+          expect {
+            post_revisor.revise!(
+              post.user,
+              { raw: "updated body", title: "This is an updated topic title" },
+              revised_at: post.updated_at + SiteSetting.editing_grace_period + 1.second,
+            )
+          }.to change { post.topic.reload.bumped_at }
+        end
+
+        it "keeps post changes available to the modifier before advancing the draft" do
+          DiscoursePluginRegistry.unregister_modifier(
+            plugin_instance,
+            :should_bump_topic,
+            &modifier_block
+          )
+
+          inspecting_modifier =
+            Proc.new do |value, modifier_post, modifier_post_changes, modifier_topic_changes, editor|
+              modifier_post.is_first_post? && modifier_post_changes.any?
+            end
+
+          plugin_instance.register_modifier(:should_bump_topic, &inspecting_modifier)
+
+          expect {
+            post_revisor.revise!(
+              post.user,
+              { raw: "updated body", title: "Updated topic title" },
+              revised_at: post.updated_at + SiteSetting.editing_grace_period + 1.second,
+            )
+          }.to change { post.topic.reload.bumped_at }
+        ensure
+          if defined?(inspecting_modifier)
+            DiscoursePluginRegistry.unregister_modifier(
+              plugin_instance,
+              :should_bump_topic,
+              &inspecting_modifier
+            )
+          end
+          plugin_instance.register_modifier(:should_bump_topic, &modifier_block)
+        end
+
+        it "doesn't bump the topic when the title edit is invalid" do
+          original_raw = post.raw
+          post.topic.update!(bumped_at: 1.day.ago)
+
+          messages =
+            MessageBus.track_publish(TopicTrackingState::LATEST_MESSAGE_BUS_CHANNEL) do
+              expect {
+                result =
+                  post_revisor.revise!(
+                    post.user,
+                    { raw: "updated body", title: "New Title" },
+                    revised_at: post.updated_at + SiteSetting.editing_grace_period + 1.second,
+                  )
+                expect(result).to eq(false)
+              }.not_to change { post.topic.reload.bumped_at }
+            end
+
+          expect(messages).to be_empty
+          expect(post.reload.raw).to eq(original_raw)
+          expect(post.version).to eq(1)
         end
       end
     end
@@ -1847,6 +2115,285 @@ describe PostRevisor do
             )
           expect(result).to eq(true)
         }.not_to change { post.topic.reload.bumped_at }
+      end
+    end
+  end
+
+  describe "draft cleanup" do
+    fab!(:post)
+
+    it "deletes the draft after successful revision" do
+      draft_key = post.topic.draft_key
+      Draft.set(post.user, draft_key, 0, '{"reply":"test draft"}')
+
+      expect(Draft.find_by(user_id: post.user.id, draft_key: draft_key)).to be_present
+
+      post.revise(post.user, raw: "updated content here for the test")
+
+      expect(Draft.find_by(user_id: post.user.id, draft_key: draft_key)).to be_nil
+    end
+
+    it "deletes the draft even when draft sequence exceeds DraftSequence" do
+      draft_key = post.topic.draft_key
+
+      # Simulate edge case: draft sequence is higher than DraftSequence
+      # When DraftSequence.next! runs, it increments to 6, but sequence < 6 doesn't catch sequence 6
+      Draft.create!(user: post.user, draft_key: draft_key, data: '{"reply":"test"}', sequence: 6)
+      DraftSequence.create!(user_id: post.user.id, draft_key: draft_key, sequence: 5)
+
+      expect(Draft.find_by(user_id: post.user.id, draft_key: draft_key)).to be_present
+
+      post.revise(post.user, raw: "updated content here for the test")
+
+      expect(Draft.find_by(user_id: post.user.id, draft_key: draft_key)).to be_nil
+    end
+  end
+
+  describe "revising reply_to_post_number" do
+    fab!(:topic)
+    fab!(:op_author, :user)
+    fab!(:first_reply_author, :user)
+    fab!(:second_reply_author, :user)
+    fab!(:editor) { Fabricate(:user, refresh_auto_groups: true) }
+
+    fab!(:original_post) { Fabricate(:post, topic: topic, user: op_author, post_number: 1) }
+    fab!(:first_reply) do
+      PostCreator.create!(
+        first_reply_author,
+        topic_id: topic.id,
+        raw: "first reply body, long enough to be valid",
+        reply_to_post_number: 1,
+      )
+    end
+    fab!(:second_reply) do
+      PostCreator.create!(
+        second_reply_author,
+        topic_id: topic.id,
+        raw: "second reply body, long enough to be valid",
+        reply_to_post_number: 1,
+      )
+    end
+    fab!(:post_to_edit) do
+      PostCreator.create!(
+        editor,
+        topic_id: topic.id,
+        raw: "my reply body, long enough to be valid",
+        reply_to_post_number: 1,
+      )
+    end
+
+    def revise(value, opts = {})
+      PostRevisor.new(post_to_edit).revise!(
+        editor,
+        { reply_to_post_number: value },
+        { bypass_rate_limiter: true }.merge(opts),
+      )
+    end
+
+    it "reparents to another earlier post and syncs reply_to_user_id" do
+      original_parent_reply_count = original_post.reload.reply_count
+
+      expect(revise(first_reply.post_number)).to eq(true)
+
+      post_to_edit.reload
+      expect(post_to_edit.reply_to_post_number).to eq(first_reply.post_number)
+      expect(post_to_edit.reply_to_user_id).to eq(first_reply.user_id)
+      expect(first_reply.reload.reply_count).to eq(1)
+      expect(original_post.reload.reply_count).to eq(original_parent_reply_count - 1)
+    end
+
+    it "removes the reply relationship when set to nil" do
+      expect(revise(nil)).to eq(true)
+
+      post_to_edit.reload
+      expect(post_to_edit.reply_to_post_number).to be_nil
+      expect(post_to_edit.reply_to_user_id).to be_nil
+      expect(PostReply.where(post_id: original_post.id, reply_post_id: post_to_edit.id)).to be_empty
+    end
+
+    it "tracks the change in a PostRevision" do
+      revise(first_reply.post_number, force_new_version: true)
+
+      revision = post_to_edit.post_revisions.order(:number).last
+      expect(revision.modifications["reply_to_post_number"]).to eq([1, first_reply.post_number])
+    end
+
+    it "does not create a revision when the value is unchanged" do
+      expect { revise(post_to_edit.reply_to_post_number) }.not_to change {
+        post_to_edit.post_revisions.count
+      }
+    end
+
+    it "rejects a self-reference" do
+      expect(revise(post_to_edit.post_number)).to eq(false)
+      expect(post_to_edit.errors[:reply_to_post_number]).to be_present
+      expect(post_to_edit.reload.reply_to_post_number).to eq(1)
+    end
+
+    it "rejects a later post in the topic" do
+      later_post =
+        PostCreator.create!(
+          first_reply_author,
+          topic_id: topic.id,
+          raw: "a later post, long enough to be valid",
+        )
+      expect(revise(later_post.post_number)).to eq(false)
+      expect(post_to_edit.errors[:reply_to_post_number]).to be_present
+    end
+
+    it "rejects a post that does not exist in the topic" do
+      expect(revise(999)).to eq(false)
+      expect(post_to_edit.errors[:reply_to_post_number]).to be_present
+    end
+
+    it "rejects a deleted post" do
+      first_reply.trash!
+      expect(revise(first_reply.post_number)).to eq(false)
+      expect(post_to_edit.errors[:reply_to_post_number]).to be_present
+    end
+
+    it "keeps the PostReply row for the old parent if the post still quotes it" do
+      post_to_edit.update!(
+        raw: "quoting\n[quote=\"#{op_author.username}, post:1, topic:#{topic.id}\"]hi[/quote]",
+      )
+      post_to_edit.extract_quoted_post_numbers
+      post_to_edit.save!
+
+      expect(revise(first_reply.post_number)).to eq(true)
+      expect(
+        PostReply.where(post_id: original_post.id, reply_post_id: post_to_edit.id),
+      ).to be_present
+    end
+
+    it "rejects a target the editor cannot see" do
+      SiteSetting.whispers_allowed_groups = Group::AUTO_GROUPS[:staff]
+      whisper =
+        PostCreator.create!(
+          admin,
+          topic_id: topic.id,
+          raw: "a whisper the editor cannot see",
+          post_type: Post.types[:whisper],
+        )
+
+      expect(revise(whisper.post_number)).to eq(false)
+      expect(post_to_edit.errors[:reply_to_post_number]).to be_present
+    end
+
+    it "does not create new PostReply rows when the post save fails" do
+      SiteSetting.min_post_length = 500
+      new_parent_reply_count = first_reply.reload.reply_count
+
+      result =
+        PostRevisor.new(post_to_edit).revise!(
+          editor,
+          { raw: "too short", reply_to_post_number: first_reply.post_number },
+          bypass_rate_limiter: true,
+        )
+
+      expect(result).to eq(false)
+      expect(PostReply.where(post_id: first_reply.id, reply_post_id: post_to_edit.id)).to be_empty
+      expect(first_reply.reload.reply_count).to eq(new_parent_reply_count)
+    end
+
+    it "cleans up the PostReply row when the previous parent is already trashed" do
+      original_post.trash!
+
+      expect(
+        PostReply.where(post_id: original_post.id, reply_post_id: post_to_edit.id),
+      ).to be_present
+
+      expect(revise(first_reply.post_number)).to eq(true)
+
+      expect(PostReply.where(post_id: original_post.id, reply_post_id: post_to_edit.id)).to be_empty
+    end
+
+    context "with nested reply stats" do
+      def direct_reply_count(post)
+        NestedViewPostStat.where(post_id: post.id).pick(:direct_reply_count) || 0
+      end
+
+      def total_descendant_count(post)
+        NestedViewPostStat.where(post_id: post.id).pick(:total_descendant_count) || 0
+      end
+
+      it "moves the subtree between ancestor chains on reparent" do
+        SiteSetting.nested_replies_enabled = true
+
+        nested_op = Fabricate(:post, topic: topic, user: op_author)
+        nested_reparent_target =
+          PostCreator.create!(
+            first_reply_author,
+            topic_id: topic.id,
+            raw: "reparent target, long enough to be valid",
+            reply_to_post_number: nested_op.post_number,
+          )
+        moved_post =
+          PostCreator.create!(
+            editor,
+            topic_id: topic.id,
+            raw: "the one we'll reparent, long enough",
+            reply_to_post_number: nested_op.post_number,
+          )
+
+        # Before: nested_op has two direct children (target + moved_post).
+        expect(direct_reply_count(nested_op)).to eq(2)
+        expect(total_descendant_count(nested_op)).to eq(2)
+        expect(direct_reply_count(nested_reparent_target)).to eq(0)
+        expect(total_descendant_count(nested_reparent_target)).to eq(0)
+
+        result =
+          PostRevisor.new(moved_post).revise!(
+            editor,
+            { reply_to_post_number: nested_reparent_target.post_number },
+            bypass_rate_limiter: true,
+          )
+
+        expect(result).to eq(true)
+        # After: moved_post now lives under target. nested_op stays a shared
+        # ancestor (2 total descendants) but loses a direct child; target
+        # gains one direct + one total.
+        expect(direct_reply_count(nested_op)).to eq(1)
+        expect(total_descendant_count(nested_op)).to eq(2)
+        expect(direct_reply_count(nested_reparent_target)).to eq(1)
+        expect(total_descendant_count(nested_reparent_target)).to eq(1)
+      end
+
+      it "moves the subtree up when the new target is the current grandparent" do
+        SiteSetting.nested_replies_enabled = true
+
+        nested_op = Fabricate(:post, topic: topic, user: op_author)
+        middle =
+          PostCreator.create!(
+            first_reply_author,
+            topic_id: topic.id,
+            raw: "middle, long enough to be valid",
+            reply_to_post_number: nested_op.post_number,
+          )
+        moved_post =
+          PostCreator.create!(
+            editor,
+            topic_id: topic.id,
+            raw: "will move up, long enough",
+            reply_to_post_number: middle.post_number,
+          )
+
+        expect(direct_reply_count(nested_op)).to eq(1)
+        expect(total_descendant_count(nested_op)).to eq(2)
+        expect(direct_reply_count(middle)).to eq(1)
+        expect(total_descendant_count(middle)).to eq(1)
+
+        PostRevisor.new(moved_post).revise!(
+          editor,
+          { reply_to_post_number: nested_op.post_number },
+          bypass_rate_limiter: true,
+        )
+
+        # middle loses its only descendant; nested_op's total stays at 2,
+        # its direct child count goes from 1 to 2.
+        expect(direct_reply_count(middle)).to eq(0)
+        expect(total_descendant_count(middle)).to eq(0)
+        expect(direct_reply_count(nested_op)).to eq(2)
+        expect(total_descendant_count(nested_op)).to eq(2)
       end
     end
   end

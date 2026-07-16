@@ -97,10 +97,6 @@ hu:
       advanced:
         assigned:
           label: "Kiosztva:"
-    topics:
-      bulk:
-        unassign: "Témák elvétele"
-        assign: "Témák kiosztása"
     discourse_automation:
       scriptables:
         random_assign:
@@ -122,3 +118,11 @@ hu:
     edit_assignments_modal:
       topic: "Téma"
       post: "Bejegyzés"
+    discourse_workflows:
+      nodes:
+        "trigger:assigned": "Kiosztott"
+      assign_topic:
+        operations:
+          assign: "Kiosztás"
+          unassign: "Elvétel"
+        topic_id: "Témaazonosító"

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-describe "Unified new topic list", type: :system do
+describe "Unified new topic list" do
   fab!(:user)
   fab!(:group) { Fabricate(:group, users: [user]) }
   fab!(:category)
@@ -32,7 +32,7 @@ describe "Unified new topic list", type: :system do
 
   shared_examples "new list new topics and replies toggle" do
     context "when unified new is enabled" do
-      before { SiteSetting.experimental_new_new_view_groups = group.name }
+      before { SiteSetting.enable_unified_new = true }
 
       it "shows all new topics and replies by default" do
         visit("/new")
@@ -224,7 +224,7 @@ describe "Unified new topic list", type: :system do
 
       context "when the /new topic list is scoped to a tag" do
         it "shows new topics and replies with the tag" do
-          visit("/tag/#{tag.name}/l/new")
+          visit("/tag/#{tag.slug}/#{tag.id}/l/new")
           expect(topic_list).to have_topics(count: 2)
           [new_reply_with_tag, new_topic_with_tag].each do |topic|
             expect(topic_list).to have_topic(topic)
@@ -239,7 +239,7 @@ describe "Unified new topic list", type: :system do
         end
 
         it "shows only new topics with the tag when the user switches to the Topics tab" do
-          visit("/tag/#{tag.name}/l/new")
+          visit("/tag/#{tag.slug}/#{tag.id}/l/new")
           tabs_toggle.topics_tab.click
 
           expect(topic_list).to have_topics(count: 1)
@@ -252,11 +252,11 @@ describe "Unified new topic list", type: :system do
           expect(tabs_toggle.replies_tab).to have_count(1)
           expect(tabs_toggle.topics_tab).to have_count(1)
 
-          expect(page).to have_current_path("/tag/#{tag.name}/l/new?subset=topics")
+          expect(page).to have_current_path("/tag/#{tag.slug}/#{tag.id}/l/new?subset=topics")
         end
 
         it "shows only topics with new replies with the tag when the user switches to the Replies tab" do
-          visit("/tag/#{tag.name}/l/new")
+          visit("/tag/#{tag.slug}/#{tag.id}/l/new")
 
           tabs_toggle.replies_tab.click
 
@@ -270,17 +270,17 @@ describe "Unified new topic list", type: :system do
           expect(tabs_toggle.replies_tab).to have_count(1)
           expect(tabs_toggle.topics_tab).to have_count(1)
 
-          expect(page).to have_current_path("/tag/#{tag.name}/l/new?subset=replies")
+          expect(page).to have_current_path("/tag/#{tag.slug}/#{tag.id}/l/new?subset=replies")
         end
 
         it "respects the subset query param and activates the appropriate tab" do
-          visit("/tag/#{tag.name}/l/new?subset=topics")
+          visit("/tag/#{tag.slug}/#{tag.id}/l/new?subset=topics")
 
           expect(tabs_toggle.all_tab).to be_inactive
           expect(tabs_toggle.replies_tab).to be_inactive
           expect(tabs_toggle.topics_tab).to be_active
 
-          visit("/tag/#{tag.name}/l/new?subset=replies")
+          visit("/tag/#{tag.slug}/#{tag.id}/l/new?subset=replies")
 
           expect(tabs_toggle.all_tab).to be_inactive
           expect(tabs_toggle.replies_tab).to be_active
@@ -290,7 +290,7 @@ describe "Unified new topic list", type: :system do
         it "live-updates the counts shown on the tabs" do
           Fabricate(:post, topic: Fabricate(:topic, tags: [tag]))
 
-          visit("/tag/#{tag.name}/l/new")
+          visit("/tag/#{tag.slug}/#{tag.id}/l/new")
 
           expect(tabs_toggle.replies_tab).to have_count(1)
           expect(tabs_toggle.topics_tab).to have_count(2)
@@ -304,7 +304,7 @@ describe "Unified new topic list", type: :system do
     end
 
     context "when unified new is not enabled" do
-      before { SiteSetting.experimental_new_new_view_groups = "" }
+      before { SiteSetting.enable_unified_new = false }
 
       it "doesn't show the tabs toggle" do
         visit("/new")
@@ -318,7 +318,7 @@ describe "Unified new topic list", type: :system do
 
     context "when there are no new topics" do
       before do
-        SiteSetting.experimental_new_new_view_groups = group.name
+        SiteSetting.enable_unified_new = true
 
         [new_topic, new_topic_in_category, new_topic_with_tag].each do |topic|
           TopicUser.update_last_read(user, topic.id, 1, 1, 1)
@@ -347,7 +347,7 @@ describe "Unified new topic list", type: :system do
 
     context "when there are no new replies" do
       before do
-        SiteSetting.experimental_new_new_view_groups = group.name
+        SiteSetting.enable_unified_new = true
 
         [new_reply, new_reply_in_category, new_reply_with_tag].each do |topic|
           TopicUser.update_last_read(user, topic.id, 2, 1, 1)
@@ -380,7 +380,7 @@ describe "Unified new topic list", type: :system do
 
     context "when there's only new topics" do
       before do
-        SiteSetting.experimental_new_new_view_groups = group.name
+        SiteSetting.enable_unified_new = true
 
         [new_reply, new_reply_in_category, new_reply_with_tag].each do |topic|
           TopicUser.update_last_read(user, topic.id, 2, 1, 1)
@@ -409,7 +409,7 @@ describe "Unified new topic list", type: :system do
 
     context "when there's only new replies" do
       before do
-        SiteSetting.experimental_new_new_view_groups = group.name
+        SiteSetting.enable_unified_new = true
 
         [new_topic, new_topic_in_category, new_topic_with_tag].each do |topic|
           TopicUser.update_last_read(user, topic.id, 1, 1, 1)

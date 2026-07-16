@@ -40,6 +40,11 @@ sq:
       chat_channels_count: "Kanalet e bisedës"
       chat_users_count: "Përdoruesit e bisedës"
     chat:
+      edit_category:
+        tab_title: "Biseda"
+        description: "Përshkrimi"
+        actions: "Veprimet"
+        settings: "Rregullimet"
       text_copied: Teksti u kopjua në memo
       link_copied: Linku u kopjua në memo
       back_to_forum: "Forumi"
@@ -52,9 +57,11 @@ sq:
       bot: "bot"
       create: "Krijo"
       cancel: "Anulo"
+      pinned: "E përzgjedhur"
       channel_settings:
         edit: "Redakto"
         add: "Shto"
+        notification_settings_context: "Njoftimet"
       close: "Mbyll"
       remove: "Hiq"
       delete: "Fshij"
@@ -101,6 +108,7 @@ sq:
         title: Mesazh i ri
         prefix: "Për:"
       create_channel:
+        description: "Përshkrimi"
         type: "Lloji"
         types:
           category: "Kategori"
@@ -175,3 +183,10 @@ sq:
           fields:
             message:
               label: Mesazh
+    discourse_workflows:
+      nodes:
+        "action:send_chat_message": "Dërgoi një kanal mesazhi."
+      send_chat_message:
+        message: "Mesazh"
+      chat_approval:
+        message: "Mesazh"

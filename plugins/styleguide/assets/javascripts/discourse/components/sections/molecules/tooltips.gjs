@@ -4,12 +4,12 @@ import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
 import { service } from "@ember/service";
-import { htmlSafe } from "@ember/template";
-import DButton from "discourse/components/d-button";
-import DToggleSwitch from "discourse/components/d-toggle-switch";
+import { trustHTML } from "@ember/template";
 import DTooltip from "discourse/float-kit/components/d-tooltip";
 import { TOOLTIP } from "discourse/float-kit/lib/constants";
 import withEventValue from "discourse/helpers/with-event-value";
+import DButton from "discourse/ui-kit/d-button";
+import DToggleSwitch from "discourse/ui-kit/d-toggle-switch";
 import DummyComponent from "discourse/plugins/styleguide/discourse/components/dummy-component";
 import StyleguideComponent from "discourse/plugins/styleguide/discourse/components/styleguide/component";
 import Controls from "discourse/plugins/styleguide/discourse/components/styleguide/controls";
@@ -40,7 +40,7 @@ export default class Tooltips extends Component {
   }
 
   set content(value) {
-    this._content = htmlSafe(value);
+    this._content = trustHTML(value);
   }
 
   @action

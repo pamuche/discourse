@@ -1,20 +1,15 @@
-import { click, render } from "@ember/test-helpers";
+import { click, fillIn, render, triggerEvent } from "@ember/test-helpers";
 import { module, test } from "qunit";
 import AdminReport from "discourse/admin/components/admin-report";
 import { setupRenderingTest } from "discourse/tests/helpers/component-test";
 import pretender, { response } from "discourse/tests/helpers/create-pretender";
 
-module("Integration | Component | admin-report", function (hooks) {
+module("Integration | Component | AdminReport", function (hooks) {
   setupRenderingTest(hooks);
 
   test("default", async function (assert) {
     await render(
-      <template>
-        <AdminReport
-          @dataSourceName="signups"
-          @showDescriptionInTooltip={{false}}
-        />
-      </template>
+      <template><AdminReport @dataSourceName="signups" /></template>
     );
 
     assert.dom(".admin-report.signups").exists();
@@ -22,19 +17,21 @@ module("Integration | Component | admin-report", function (hooks) {
     assert
       .dom(".d-page-subheader .d-page-subheader__title")
       .hasText("Signups", "has a title");
+
+    await triggerEvent(".fk-d-tooltip__trigger", "pointermove");
     assert
-      .dom(".d-page-subheader .d-page-subheader__description")
-      .hasText(
+      .dom(".fk-d-tooltip__content")
+      .includesText(
         "New account registrations for this period",
-        "has a description"
+        "shows the description in a tooltip"
       );
 
     assert
-      .dom(".admin-report-table thead tr th:first-child .title")
+      .dom(".admin-report-table thead tr th:first-child .sort-btn")
       .hasText("Day", "has col headers");
 
     assert
-      .dom(".admin-report-table thead tr th:nth-child(2) .title")
+      .dom(".admin-report-table thead tr th:nth-child(2) .sort-btn")
       .hasText("Count", "has col headers");
 
     assert
@@ -152,5 +149,130 @@ module("Integration | Component | admin-report", function (hooks) {
     );
 
     assert.dom(".alert-error.not-found").exists("displays a not found error");
+  });
+
+  module("grouping date range updates", function () {
+    test("changing grouping to weekly updates date range to 3 months", async function (assert) {
+      const refreshArgs = [];
+      const refreshCallback = (options) => {
+        refreshArgs.push(options);
+      };
+      await render(
+        <template>
+          <AdminReport
+            @dataSourceName="signups"
+            @showFilteringUI={{true}}
+            @onRefresh={{refreshCallback}}
+          />
+        </template>
+      );
+
+      await click(".mode-btn.chart");
+
+      refreshArgs.length = 0;
+      await click(".chart-grouping.weekly");
+
+      assert.strictEqual(refreshArgs.length, 1, "refresh is called once");
+      assert.strictEqual(refreshArgs[0].chartGrouping, "weekly");
+
+      const expectedStart = moment().subtract(3, "months").startOf("day");
+      assert.strictEqual(
+        refreshArgs[0].startDate.format("YYYY-MM-DD"),
+        expectedStart.format("YYYY-MM-DD")
+      );
+    });
+
+    test("changing grouping to monthly updates date range to 12 months", async function (assert) {
+      const refreshArgs = [];
+      const refreshCallback = (options) => {
+        refreshArgs.push(options);
+      };
+      await render(
+        <template>
+          <AdminReport
+            @dataSourceName="signups"
+            @showFilteringUI={{true}}
+            @onRefresh={{refreshCallback}}
+          />
+        </template>
+      );
+
+      await click(".mode-btn.chart");
+
+      refreshArgs.length = 0;
+      await click(".chart-grouping.monthly");
+
+      assert.strictEqual(refreshArgs.length, 1, "refresh is called once");
+      assert.strictEqual(refreshArgs[0].chartGrouping, "monthly");
+
+      const expectedStart = moment().subtract(12, "months").startOf("day");
+      assert.strictEqual(
+        refreshArgs[0].startDate.format("YYYY-MM-DD"),
+        expectedStart.format("YYYY-MM-DD")
+      );
+    });
+
+    test("changing grouping to daily updates date range to 1 month", async function (assert) {
+      const refreshArgs = [];
+      const refreshCallback = (options) => {
+        refreshArgs.push(options);
+      };
+      await render(
+        <template>
+          <AdminReport
+            @dataSourceName="signups"
+            @showFilteringUI={{true}}
+            @onRefresh={{refreshCallback}}
+          />
+        </template>
+      );
+
+      await click(".mode-btn.chart");
+      await click(".chart-grouping.monthly");
+
+      refreshArgs.length = 0;
+      await click(".chart-grouping.daily");
+
+      assert.strictEqual(refreshArgs.length, 1, "refresh is called once");
+      assert.strictEqual(refreshArgs[0].chartGrouping, "daily");
+
+      const expectedStart = moment().subtract(1, "month").startOf("day");
+      assert.strictEqual(
+        refreshArgs[0].startDate.format("YYYY-MM-DD"),
+        expectedStart.format("YYYY-MM-DD")
+      );
+    });
+
+    test("after manually changing dates, changing grouping does not override the date range", async function (assert) {
+      const refreshArgs = [];
+      const refreshCallback = (options) => {
+        refreshArgs.push(options);
+      };
+      await render(
+        <template>
+          <AdminReport
+            @dataSourceName="signups"
+            @showFilteringUI={{true}}
+            @onRefresh={{refreshCallback}}
+          />
+        </template>
+      );
+
+      await click(".mode-btn.chart");
+
+      await fillIn(".from.d-date-time-input .date-picker", "2025-01-01");
+
+      refreshArgs.length = 0;
+      await click(".chart-grouping.monthly");
+
+      assert.strictEqual(refreshArgs.length, 1, "refresh is called once");
+      assert.strictEqual(refreshArgs[0].chartGrouping, "monthly");
+
+      assert.strictEqual(
+        refreshArgs[0].startDate.format("YYYY-MM-DD"),
+        "2025-01-01",
+        "does not override the custom start date"
+      );
+    });
   });
 });

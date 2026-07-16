@@ -5,6 +5,10 @@ class Admin::SiteSettingsController < Admin::AdminController
     render_json_error e.message, status: 422
   end
 
+  rescue_from Discourse::InvalidHTMLParameters do |e|
+    render_json_error e.html_message, html_message: true, status: 422
+  end
+
   def index
     params.permit(:categories, :plugin, :names)
     render_json_dump(
@@ -32,9 +36,21 @@ class Admin::SiteSettingsController < Admin::AdminController
       settings = [{ setting_name: id, value: params[id], backfill: }]
     end
 
-    SiteSetting::Update.call(params: { settings: }, guardian:) do
+    SiteSetting::Update.call(
+      guardian:,
+      params: {
+        settings:,
+      },
+      options: {
+        # TODO: remove once the site setting is no longer hidden
+        allow_changing_hidden: %i[enable_site_owner_onboarding],
+      },
+    ) do
       on_success { head :no_content }
-      on_exceptions { |e| raise Discourse::InvalidParameters, e }
+      on_exceptions do |e|
+        raise e if e.is_a?(Discourse::InvalidParameters)
+        raise Discourse::InvalidParameters, e.message
+      end
       on_failed_policy(:settings_are_not_deprecated) do |policy|
         raise Discourse::InvalidParameters, policy.reason
       end
@@ -54,6 +70,7 @@ class Admin::SiteSettingsController < Admin::AdminController
     params.require(:site_setting_id)
     id = params[:site_setting_id]
     raise Discourse::NotFound unless id.start_with?("default_")
+    raise Discourse::NotFound unless SiteSetting.has_setting?(id)
     new_value = value_or_default(params[id])
 
     raise_access_hidden_setting(id)

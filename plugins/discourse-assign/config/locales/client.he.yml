@@ -128,8 +128,6 @@ he:
       web_hooks:
         assign_event:
           group_name: "הקצאת אירועים"
-          assigned: "בעת הקצאת נושא על ידי משתמש"
-          unassigned: "בעת ביטול הקצאת נושא על ידי משתמש"
     search:
       advanced:
         in:
@@ -137,10 +135,6 @@ he:
           unassigned: "אינם מוקצים"
         assigned:
           label: "הוקצה לטובת"
-    topics:
-      bulk:
-        unassign: "ביטול הקצאת נושאים"
-        assign: "הקצאת נושאים"
     discourse_automation:
       scriptables:
         random_assign:
@@ -193,3 +187,12 @@ he:
       title: "עריכת הקצאות"
       topic: "נושא"
       post: "פוסט"
+    discourse_workflows:
+      nodes:
+        "trigger:assigned": "מוקצה"
+      assign_topic:
+        operations:
+          assign: "הקצאה"
+          unassign: "ביטול הקצאה"
+        topic_id: "מזהה נושא"
+        assignee: "ממונה"

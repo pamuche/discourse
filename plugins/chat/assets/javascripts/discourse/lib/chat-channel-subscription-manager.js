@@ -80,13 +80,19 @@ export default class ChatChannelSubscriptionManager {
       case "notice":
         this.handleNotice(busData);
         break;
+      case "pin":
+        this.handlePinMessage(busData);
+        break;
+      case "unpin":
+        this.handleUnpinMessage(busData);
+        break;
     }
 
     this.channel.channelMessageBusLastId = lastMessageBusId;
   }
 
   handleSentMessage(data) {
-    if (data.chat_message.user.id === this.currentUser.id && data.staged_id) {
+    if (data.chat_message.user.id === this.currentUser?.id && data.staged_id) {
       const stagedMessage = this.handleStagedMessage(
         this.channel,
         this.messagesManager,
@@ -113,10 +119,14 @@ export default class ChatChannelSubscriptionManager {
     stagedMessage.error = null;
     stagedMessage.id = data.chat_message.id;
     stagedMessage.staged = false;
+    stagedMessage.message = data.chat_message.message;
     stagedMessage.excerpt = data.chat_message.excerpt;
     stagedMessage.channel = channel;
     stagedMessage.createdAt = new Date(data.chat_message.created_at);
     stagedMessage.cooked = data.chat_message.cooked;
+    stagedMessage.uploads = cloneJSON(data.chat_message.uploads || []);
+    stagedMessage.streaming = data.chat_message.streaming;
+    stagedMessage.edited = data.chat_message.edited;
 
     return stagedMessage;
   }
@@ -134,7 +144,7 @@ export default class ChatChannelSubscriptionManager {
   handleReactionMessage(data) {
     const message = this.messagesManager.findMessage(data.chat_message_id);
     if (message) {
-      message.react(data.emoji, data.action, data.user, this.currentUser.id);
+      message.react(data.emoji, data.action, data.user, this.currentUser?.id);
     }
   }
 
@@ -147,6 +157,7 @@ export default class ChatChannelSubscriptionManager {
       message.uploads = cloneJSON(data.chat_message.uploads || []);
       message.edited = data.chat_message.edited;
       message.streaming = data.chat_message.streaming;
+      message.blocks = data.chat_message.blocks;
     }
   }
 
@@ -174,7 +185,11 @@ export default class ChatChannelSubscriptionManager {
       return;
     }
 
-    if (this.currentUser.staff || this.currentUser.id === targetMsg.user.id) {
+    if (
+      this.currentUser?.staff ||
+      this.channel.canModerate ||
+      this.currentUser?.id === targetMsg.user.id
+    ) {
       targetMsg.deletedAt = data.deleted_at;
       targetMsg.deletedById = data.deleted_by_id;
       targetMsg.expanded = false;
@@ -182,7 +197,9 @@ export default class ChatChannelSubscriptionManager {
       this.messagesManager.removeMessage(targetMsg);
     }
 
-    if (this.channel.currentUserMembership.lastReadMessageId === targetMsg.id) {
+    if (
+      this.channel.currentUserMembership?.lastReadMessageId === targetMsg.id
+    ) {
       this.channel.currentUserMembership.lastReadMessageId =
         data.latest_not_deleted_message_id;
     }
@@ -244,6 +261,46 @@ export default class ChatChannelSubscriptionManager {
       } else {
         message.thread.preview = ChatThreadPreview.create(data.preview);
       }
+    }
+  }
+
+  handlePinMessage(data) {
+    const alreadyApplied = this.channel.pendingOptimisticPins.delete(
+      data.chat_message_id
+    );
+
+    const message = this.messagesManager.findMessage(data.chat_message_id);
+    if (message) {
+      message.pinned = true;
+    }
+
+    if (!alreadyApplied) {
+      this.channel.pinnedMessagesCount++;
+    }
+
+    if (
+      this.channel.currentUserMembership &&
+      data.pinned_by_id !== this.currentUser?.id
+    ) {
+      this.channel.currentUserMembership.hasUnseenPins = true;
+    }
+  }
+
+  handleUnpinMessage(data) {
+    const alreadyApplied = this.channel.pendingOptimisticUnpins.delete(
+      data.chat_message_id
+    );
+
+    const message = this.messagesManager.findMessage(data.chat_message_id);
+    if (message) {
+      message.pinned = false;
+    }
+
+    if (!alreadyApplied) {
+      this.channel.pinnedMessagesCount = Math.max(
+        0,
+        this.channel.pinnedMessagesCount - 1
+      );
     }
   }
 }

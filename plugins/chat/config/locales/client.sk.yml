@@ -46,6 +46,12 @@ sk:
           many: "%{formatted_number} správ v chate"
           other: "%{formatted_number} správy v chate"
     chat:
+      edit_category:
+        tab_title: "Chat"
+        channel: "Kanál"
+        description: "Popis"
+        actions: "Akcie"
+        settings: "Nastavení"
       text_copied: Text bol skopírovaný do schránky
       link_copied: Odkaz bol skopírovaný do schránky
       back_to_forum: "fórum"
@@ -60,6 +66,7 @@ sk:
       cancel: "Zrušiť"
       cancel_reply: "Zrušiť odpoveď"
       chat_channels: "Kanály"
+      pinned: "Pripnutý"
       browse_all_channels: "Prehľadávať všetky kanály"
       see_in: "Vidieť v"
       move_to_channel:
@@ -87,6 +94,7 @@ sk:
         join_channel: "Pripojte sa ku kanálu"
         leave_channel: "Opustiť kanál"
         leave_groupchat_info: "Keď opustíte tento skupinový čet, už k nemu nebudete mať prístup a nebudete dostávať súvisiace upozornenia. Ak sa chcete znova pripojiť, musíte byť znova pozvaní členom skupinového rozhovoru."
+        notification_settings_context: "Upozornenia"
         join: "Pridať sa"
         leave: "Opustiť"
         save_label:
@@ -253,8 +261,6 @@ sk:
       no_public_channels_cta: "Prehľadávanie kanálov"
       kicked_from_channel: "K tomuto kanálu už nemáte prístup."
       chat_notifications_title: "Oznámenia chatu"
-      only_chat_push_notifications:
-        title: "Odosielajte iba upozornenia na chat"
       ignore_channel_wide_mention:
         title: "Ignorovať zmienky v rámci celého kanála"
       show_thread_title_prompts:
@@ -285,7 +291,6 @@ sk:
       retry_staged_message:
         title: "Chyba siete"
         action: "Odoslať znova?"
-      unreliable_network: "Sieť je nespoľahlivá, odosielanie správ a ukladanie konceptu nemusí fungovať"
       bookmark_message: "Záložka"
       bookmark_message_edit: "Upraviť záložku"
       restore: "Obnoviť odstránenú správu"
@@ -305,8 +310,6 @@ sk:
         title: "Zvuk oznámenia chatu na ploche"
       sounds:
         none: "Žiadny"
-        bell: "zvonček"
-        ding: "Ding"
       title: "chat"
       title_capitalized: "Chat"
       upload: "Priložiť súbor"
@@ -384,7 +387,6 @@ sk:
         input_placeholder: Pridať meno
         slug_description: V adrese URL namiesto názvu kanála sa používa kanálový slug
         name: Názov kanála
-        slug: URL adresa kanála (voliteľné)
       channel_edit_description_modal:
         title: Upraviť popis
         input_placeholder: Pridanie popisu
@@ -471,9 +473,8 @@ sk:
             many: 'Používatelia v inej skupine %{group} a %{count} budú mať prístup k tomuto kanálu podľa nastavení zabezpečenia <a href="%{settingLink}" target="_blank"></a>'
             other: 'Používatelia v inej skupine %{group} a %{count} budú mať prístup k tomuto kanálu podľa nastavení zabezpečenia <a href="%{settingLink}" target="_blank"></a>'
         create: "Vytvorte kanál"
-        description: "Popis (nepovinné)"
+        description: "Popis"
         name: "Názov kanála"
-        slug: "URL adresa kanála (voliteľné)"
         title: "Nový kanál"
         type: "Typ"
         types:
@@ -638,17 +639,11 @@ sk:
           other: "%{commaSeparatedUsernames} a %{count} ďalší píšu"
       retention_reminders:
         indefinitely_short: "na dobu neurčitú"
-        indefinitely_long: "Nastavenia chatu boli nastavené tak, aby uchovávali správy kanálov na neurčito."
         short:
           one: "%{count} deň"
           few: "%{count} dni"
           many: "%{count} dní"
           other: "%{count} dní"
-        long:
-          one: "Nastavenia četu boli nastavené tak, aby sa správy kanála uchovávali %{count} deň."
-          few: "Nastavenia chatu boli nastavené tak, aby sa správy z kanálov uchovávali na %{count} dni."
-          many: "Nastavenia četu boli nastavené tak, aby sa správy kanála uchovávali %{count} dní."
-          other: "Nastavenia četu boli nastavené tak, aby sa správy kanála uchovávali %{count} dní."
       flags:
         off_topic: "Táto správa nie je relevantná pre aktuálnu diskusiu definovanú názvom kanála a mala by byť pravdepodobne presunutá inam."
         inappropriate: "Táto správa obsahuje obsah, ktorý by rozumná osoba považovala za urážlivý, urážlivý alebo za porušenie <a href=\"%{basePath}/guidelines\">našich pokynov pre komunitu</a>."
@@ -785,7 +780,6 @@ sk:
           composer_bold: "%{shortcut} Tučné (iba skladateľ)"
           composer_italic: "%{shortcut} Kurzíva (iba skladateľ)"
           composer_code: "%{shortcut} Kód (iba skladateľ)"
-          drawer_open: "%{shortcut} Otvoriť zásuvku chatu"
           drawer_close: "%{shortcut} Zatvoriť zásuvku chatu"
           mark_all_channels_read: "%{shortcut} Označiť všetky kanály ako prečítané"
     topic_statuses:
@@ -818,3 +812,14 @@ sk:
       panels:
         chat:
           label: "Chat"
+    discourse_workflows:
+      nodes:
+        "action:send_chat_message": "Odoslať chatovú správu"
+      chat_message_created:
+        channel_id: "Kanál"
+      send_chat_message:
+        channel_id: "Kanál"
+        message: "Správa"
+      chat_approval:
+        message: "Správa"
+        channel_id: "Kanál"

@@ -1,7 +1,7 @@
 import Component from "@glimmer/component";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
 import DTooltip from "discourse/float-kit/components/d-tooltip";
 import { apiInitializer } from "discourse/lib/api";
 
@@ -19,7 +19,7 @@ class InlineFootnote extends Component {
       @closeOnClickOutside={{true}}
     >
       <:trigger>
-        {{! template-lint-disable no-invalid-link-text }}
+        {{! eslint-disable ember/template-no-invalid-link-text }}
         <a
           class="expand-footnote"
           href
@@ -30,7 +30,7 @@ class InlineFootnote extends Component {
         ></a>
       </:trigger>
       <:content>
-        {{htmlSafe @data.footnoteContent}}
+        {{trustHTML @data.footnoteContent}}
       </:content>
     </DTooltip>
   </template>
@@ -53,7 +53,13 @@ export default apiInitializer((api) => {
       }
 
       const footnoteId = refLink.getAttribute("href");
-      const footnoteContent = elem.querySelector(footnoteId)?.innerHTML;
+      const footnoteElement = elem.querySelector(footnoteId)?.cloneNode(true);
+
+      footnoteElement
+        ?.querySelectorAll("sup.footnote-ref, .footnote-backref")
+        .forEach((element) => element.remove());
+
+      const footnoteContent = footnoteElement?.innerHTML;
 
       const expandableFootnote = document.createElement("span");
       expandableFootnote.className = "inline-footnote";

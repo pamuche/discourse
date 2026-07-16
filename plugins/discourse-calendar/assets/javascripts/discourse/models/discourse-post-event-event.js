@@ -1,15 +1,13 @@
 import { tracked } from "@glimmer/tracking";
 import EmberObject from "@ember/object";
-import { TrackedArray } from "@ember-compat/tracked-built-ins";
+import { trackedArray } from "@ember/reactive/collections";
 import { bind } from "discourse/lib/decorators";
-import { optionalRequire } from "discourse/lib/utilities";
 import User from "discourse/models/user";
+import ChatChannel from "discourse/plugins/chat/discourse/models/chat-channel" with {
+  discourseImport: "optional",
+};
 import DiscoursePostEventEventStats from "./discourse-post-event-event-stats";
 import DiscoursePostEventInvitee from "./discourse-post-event-invitee";
-
-const ChatChannel = optionalRequire(
-  "discourse/plugins/chat/discourse/models/chat-channel"
-);
 
 const DEFAULT_REMINDER = {
   type: "notification",
@@ -17,6 +15,26 @@ const DEFAULT_REMINDER = {
   unit: "minutes",
   period: "before",
 };
+// Keep in sync with the constants of the same name on
+// DiscoursePostEvent::Event, which enforces the same window server-side.
+const EARLY_ACCESS_MINUTES = 30;
+const GRACE_PERIOD_MINUTES = 10;
+
+export function isWithinEventTimeframe(allDay, startsAt, endsAt) {
+  const now = moment();
+
+  if (allDay) {
+    const opensAt = moment(startsAt).startOf("day");
+    const closesAt = moment(startsAt).endOf("day");
+
+    return now.isBetween(opensAt, closesAt);
+  }
+
+  const opensAt = moment(startsAt).subtract(EARLY_ACCESS_MINUTES, "minutes");
+  const closesAt = moment(endsAt).add(GRACE_PERIOD_MINUTES, "minutes");
+
+  return now.isBetween(opensAt, closesAt);
+}
 
 export default class DiscoursePostEventEvent {
   static create(args = {}) {
@@ -29,17 +47,24 @@ export default class DiscoursePostEventEvent {
   @tracked categoryId;
   @tracked startsAt;
   @tracked endsAt;
+  @tracked allDay;
   @tracked duration;
   @tracked rawInvitees;
   @tracked location;
   @tracked url;
   @tracked description;
+  @tracked descriptionHtml;
   @tracked timezone;
   @tracked showLocalTime;
   @tracked status;
   @tracked post;
   @tracked minimal;
   @tracked chatEnabled;
+  @tracked livestream;
+  @tracked livestreamOnebox;
+  @tracked livestreamUrl;
+  @tracked livestreamChatChannelId;
+  @tracked isZoomLivestream;
   @tracked canUpdateAttendance;
   @tracked canActOnDiscoursePostEvent;
   @tracked shouldDisplayInvitees;
@@ -52,6 +77,7 @@ export default class DiscoursePostEventEvent {
   @tracked recurrence;
   @tracked customFields;
   @tracked channel;
+  @tracked imageUpload;
 
   @tracked _watchingInvitee;
   @tracked _sampleInvitees;
@@ -66,12 +92,14 @@ export default class DiscoursePostEventEvent {
     this.categoryId = args.category_id;
     this.startsAt = args.starts_at;
     this.endsAt = args.ends_at;
+    this.allDay = args.all_day || false;
     this.duration = args.duration;
     this.rawInvitees = args.raw_invitees;
     this.sampleInvitees = args.sample_invitees || [];
     this.location = args.location;
     this.url = args.url;
     this.description = args.description;
+    this.descriptionHtml = args.description_html;
     this.timezone = args.timezone;
     this.showLocalTime = args.show_local_time;
     this.status = args.status;
@@ -82,6 +110,11 @@ export default class DiscoursePostEventEvent {
     this.isStandalone = args.is_standalone;
     this.minimal = args.minimal;
     this.chatEnabled = args.chat_enabled;
+    this.livestream = args.livestream;
+    this.livestreamOnebox = args.livestream_onebox;
+    this.livestreamUrl = args.livestream_url;
+    this.livestreamChatChannelId = args.livestream_chat_channel_id;
+    this.isZoomLivestream = args.is_zoom_livestream;
     this.maxAttendees = args.max_attendees;
     this.atCapacity = args.at_capacity;
     this.recurrence = args.recurrence;
@@ -96,6 +129,7 @@ export default class DiscoursePostEventEvent {
     if (args.channel && ChatChannel) {
       this.channel = ChatChannel.create(args.channel);
     }
+    this.imageUpload = args.image_upload;
   }
 
   get watchingInvitee() {
@@ -113,7 +147,7 @@ export default class DiscoursePostEventEvent {
   }
 
   set sampleInvitees(invitees = []) {
-    this._sampleInvitees = new TrackedArray(
+    this._sampleInvitees = trackedArray(
       invitees.map((i) => DiscoursePostEventInvitee.create(i))
     );
   }
@@ -131,7 +165,7 @@ export default class DiscoursePostEventEvent {
   }
 
   set reminders(reminders = []) {
-    this._reminders = new TrackedArray(reminders);
+    this._reminders = trackedArray(reminders);
   }
 
   get creator() {
@@ -150,16 +184,38 @@ export default class DiscoursePostEventEvent {
     return this.status === "private";
   }
 
+  get imageUrl() {
+    return this.imageUpload?.url;
+  }
+
+  get currentlyWithinEventTimeframe() {
+    return isWithinEventTimeframe(this.allDay, this.startsAt, this.endsAt);
+  }
+
+  // An event without an end time never falls past its timeframe, since
+  // `moment(undefined)` is "now" rather than an invalid date.
+  get pastEventTimeframe() {
+    if (!this.endsAt) {
+      return false;
+    }
+
+    return moment().isAfter(
+      moment(this.endsAt).add(GRACE_PERIOD_MINUTES, "minutes")
+    );
+  }
+
   updateFromEvent(event) {
     this.name = event.name;
     this.startsAt = event.startsAt;
     this.endsAt = event.endsAt;
+    this.allDay = event.allDay;
     this.duration = event.duration;
     this.location = event.location;
     this.url = event.url;
     this.timezone = event.timezone;
     this.showLocalTime = event.showLocalTime;
     this.description = event.description;
+    this.descriptionHtml = event.descriptionHtml;
     this.status = event.status;
     this.creator = event.creator;
     this.isClosed = event.isClosed;
@@ -167,6 +223,11 @@ export default class DiscoursePostEventEvent {
     this.isStandalone = event.isStandalone;
     this.minimal = event.minimal;
     this.chatEnabled = event.chatEnabled;
+    this.livestream = event.livestream;
+    this.livestreamOnebox = event.livestreamOnebox;
+    this.livestreamUrl = this.location || this.url;
+    this.livestreamChatChannelId = event.livestreamChatChannelId;
+    this.isZoomLivestream = event.isZoomLivestream;
     this.rrule = event.rrule;
     this.maxAttendees = event.maxAttendees;
     this.atCapacity = event.atCapacity;
@@ -178,6 +239,7 @@ export default class DiscoursePostEventEvent {
     this.stats = event.stats;
     this.sampleInvitees = event.sampleInvitees || [];
     this.reminders = event.reminders;
+    this.imageUpload = event.imageUpload;
   }
 
   @bind

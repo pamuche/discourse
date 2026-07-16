@@ -34,22 +34,37 @@ sw:
             canned_reply:
               label: "Jibu"
     discourse_ai:
+      ai_tool_approval:
+        loading: "Inaandaa...."
+        tool: "Kitendo"
+        user: "Mtumiaji"
+        approve: "Imethibitishwa"
+        reject: "Kataa"
+        approved: "Wamekubaliwa"
+        rejected: "Imekataliwa"
+      llm_selector:
+        none: "Hakuna"
       features:
-        back: "Iliyopita"
         disabled: "(imezuiwa)"
         groups: "Makundi:"
         no_groups: "Hakuna"
         edit: "Mipangilio"
+        nav:
+          enabled: "Imeruhusiwa"
         filters:
           all: "Yote"
           reset: "Weka/Anzisha Upya"
         search:
           name: "Tafuta"
+        image_caption:
+          setting_groups:
+            settings: "Mipangilio"
         spam:
           name: "Barua Taka"
       modals:
         select_option: "Chagua chaguo moja..."
       translations:
+        category_scope: "Kategoria"
         stats:
           eta_hours:
             one: "saa %{count}"
@@ -71,8 +86,7 @@ sw:
         username: "Jina la mtumiaji"
         total_requests: "Jumla ya Maombi"
         total: "Jumla"
-      ai_persona:
-        back: "Iliyopita"
+      ai_agent:
         name: "Jina"
         edit: "Hariri"
         export: "Hamisha"
@@ -82,6 +96,9 @@ sw:
         save: "Hifadhi"
         enabled: "Imeruhusiwa?"
         delete: "Futa"
+        thinking_effort_options:
+          none: "Hakuna"
+          max: "Kiwango cha juu"
         response_format:
           open_modal: "Hariri"
         filters:
@@ -91,7 +108,6 @@ sw:
           title: "Upakiaji"
           uploading: "Inaongezwa"
       tools:
-        back: "Iliyopita"
         export: "Hamisha"
         import: "Imeingizwa kutoka sehemu nyingine"
         name: "Jina"
@@ -101,13 +117,31 @@ sw:
         remove_parameter: "Ondoa"
         parameter_required: "Muhimu na Inahitajika"
         edit: "Hariri"
+        test: "Majaribio"
         delete: "Futa"
+      secrets:
+        name: "Jina"
+        secret: "Thamani"
+        save: "Hifadhi"
+        edit: "Hariri"
+        delete: "Futa"
+        embedding: "Ambatanisha"
+      mcp_servers:
+        name: "Jina"
+        description: "Maelezo"
+        url: "Anwani ya mtandao"
+        oauth_connect: "Unganisha"
+        enabled: "Imeruhusiwa"
+        save: "Hifadhi"
+        edit: "Hariri"
+        delete: "Futa"
+        tools_modal:
+          required: "Muhimu na Inahitajika"
       llms:
         display_name: "Jina"
         provider: "Mkimu"
         save: "Hifadhi"
         edit: "Hariri"
-        back: "Iliyopita"
         delete: Futa
         quotas:
           group: "Kikundi"
@@ -129,10 +163,7 @@ sw:
           cancel: "Batili"
         thumbnail_suggestions:
           try_again: "Jaribu Tena"
-        image_caption:
-          save_caption: "Hifadhi"
       embeddings:
-        back: "Iliyopita"
         save: "Hifadhi"
         delete: "Futa"
         edit: "Hariri"
