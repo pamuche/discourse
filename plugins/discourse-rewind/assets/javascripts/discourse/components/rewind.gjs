@@ -5,15 +5,15 @@ import { action } from "@ember/object";
 import didInsert from "@ember/render-modifiers/modifiers/did-insert";
 import willDestroy from "@ember/render-modifiers/modifiers/will-destroy";
 import { service } from "@ember/service";
-import { htmlSafe } from "@ember/template";
-import DButton from "discourse/components/d-button";
-import DToggleSwitch from "discourse/components/d-toggle-switch";
-import concatClass from "discourse/helpers/concat-class";
+import { trustHTML } from "@ember/template";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { getAbsoluteURL } from "discourse/lib/get-url";
 import { clipboardCopy } from "discourse/lib/utilities";
 import { eq } from "discourse/truth-helpers";
+import DButton from "discourse/ui-kit/d-button";
+import DToggleSwitch from "discourse/ui-kit/d-toggle-switch";
+import dConcatClass from "discourse/ui-kit/helpers/d-concat-class";
 import { i18n } from "discourse-i18n";
 import ActivityCalendar from "discourse/plugins/discourse-rewind/discourse/components/reports/activity-calendar";
 import AiUsage from "discourse/plugins/discourse-rewind/discourse/components/reports/ai-usage";
@@ -294,7 +294,7 @@ export default class Rewind extends Component {
 
   <template>
     <div
-      class={{concatClass
+      class={{dConcatClass
         "rewind-container"
         (if this.fullScreen "--fullscreen")
       }}
@@ -356,7 +356,7 @@ export default class Rewind extends Component {
             {{willDestroy this.cleanup}}
           >
             {{#unless (eq this.currentUser.id @user.id)}}
-              <p class="rewind-other-user">{{htmlSafe
+              <p class="rewind-other-user">{{trustHTML
                   (i18n
                     "discourse_rewind.viewing_other_user"
                     username=@user.username
@@ -366,10 +366,21 @@ export default class Rewind extends Component {
 
             {{#if this.cannotViewRewind}}
               <div class="rewind-error">
-                {{htmlSafe
-                  (i18n "discourse_rewind.cannot_view_rewind_gibberish")
-                }}
-                {{htmlSafe (i18n "discourse_rewind.cannot_view_rewind")}}
+                <div class="rewind-gibberish">
+                  <p class="rewind-gibberish__title">[ACCESS DENIED::REWIND
+                    MAINFRAME SUBROUTINE FAILURE]</p>
+                  <p>Bootstrapping anomaly log...</p>
+
+                  <p><span class="rewind-gibberish__code-line">>> quantum buffer
+                      underrun ⧛</span><br />
+                    <span class="rewind-gibberish__code-line">>> cross-node
+                      parity drift (Δ=004.33)</span><br />
+                    <span class="rewind-gibberish__code-line">>> packet ϟ
+                      fragment at offset ∇47</span><br />
+                    <span class="rewind-gibberish__code-line">>> flux conduit
+                      handshake TIMED OUT</span><br /></p>
+                </div>
+                {{trustHTML (i18n "discourse_rewind.cannot_view_rewind")}}
               </div>
             {{/if}}
 
@@ -379,7 +390,7 @@ export default class Rewind extends Component {
                 as |ReportComponent|
               }}
                 {{#if ReportComponent}}
-                  <div class={{concatClass "rewind-report" report.identifier}}>
+                  <div class={{dConcatClass "rewind-report" report.identifier}}>
                     <ReportComponent
                       @report={{report}}
                       @user={{@user}}

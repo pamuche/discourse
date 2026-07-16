@@ -1,4 +1,4 @@
-import { click, fillIn, render } from "@ember/test-helpers";
+import { click, fillIn, findAll, render } from "@ember/test-helpers";
 import { module, test } from "qunit";
 import AdminSchemaSettingEditor from "discourse/admin/components/schema-setting/editor";
 import SiteSetting from "discourse/admin/models/site-setting";
@@ -8,7 +8,6 @@ import schemaAndData, {
   SCHEMA_MODES,
 } from "discourse/tests/fixtures/theme-setting-schema-data";
 import { setupRenderingTest } from "discourse/tests/helpers/component-test";
-import { queryAll } from "discourse/tests/helpers/qunit-helpers";
 import selectKit from "discourse/tests/helpers/select-kit-helper";
 import { i18n } from "discourse-i18n";
 
@@ -18,19 +17,15 @@ class TreeFromDOM {
   }
 
   refresh() {
-    this.nodes = [
-      ...queryAll(
-        ".schema-setting-editor__tree .schema-setting-editor__tree-node.--parent"
-      ),
-    ].map((container, index) => {
+    this.nodes = findAll(
+      ".schema-setting-editor__tree .schema-setting-editor__tree-node.--parent"
+    ).map((container, index) => {
       const li = container;
       const active = li.classList.contains("--active");
 
-      const children = [
-        ...queryAll(
-          `.schema-setting-editor__tree-node.--child[data-test-parent-index="${index}"]`
-        ),
-      ].map((child) => {
+      const children = findAll(
+        `.schema-setting-editor__tree-node.--child[data-test-parent-index="${index}"]`
+      ).map((child) => {
         return {
           element: child,
           textElement: child.querySelector(
@@ -39,11 +34,9 @@ class TreeFromDOM {
         };
       });
 
-      const addButtons = [
-        ...queryAll(
-          `.schema-setting-editor__tree-add-button.--child[data-test-parent-index="${index}"]`
-        ),
-      ];
+      const addButtons = findAll(
+        `.schema-setting-editor__tree-add-button.--child[data-test-parent-index="${index}"]`
+      );
 
       return {
         active,
@@ -65,7 +58,7 @@ class InputFieldsFromDOM {
     this.fields = {};
     this.count = 0;
 
-    [...queryAll(".schema-field")].forEach((field) => {
+    findAll(".schema-field").forEach((field) => {
       this.count += 1;
 
       this.fields[field.dataset.name] = {
@@ -88,7 +81,7 @@ const MOVE_UP_BTN = ".schema-setting-editor__move-up-btn";
 const MOVE_DOWN_BTN = ".schema-setting-editor__move-down-btn";
 
 module(
-  "Integration | Admin | Themes | Component | schema-setting/editor",
+  "Integration | Admin | Themes | Component | SchemaSetting | Editor",
   function (hooks) {
     setupRenderingTest(hooks);
 
@@ -1067,13 +1060,13 @@ module(
         `${inputFields.fields.required_tags_with_validations.selector} .select-kit`
       );
 
-      assert.strictEqual(tagSelector.header().value(), "gazelle,cat");
+      assert.strictEqual(tagSelector.header().name(), "gazelle,cat");
 
       await tagSelector.expand();
       await tagSelector.selectRowByIndex(2);
       await tagSelector.collapse();
 
-      assert.strictEqual(tagSelector.header().value(), "gazelle,cat,dog");
+      assert.strictEqual(tagSelector.header().name(), "gazelle,cat,dog");
 
       await tagSelector.expand();
       await tagSelector.deselectItemByName("gazelle");
@@ -1096,7 +1089,7 @@ module(
       await tagSelector.expand();
       await tagSelector.selectRowByIndex(1);
 
-      assert.strictEqual(tagSelector.header().value(), "gazelle");
+      assert.strictEqual(tagSelector.header().name(), "gazelle");
 
       inputFields.refresh();
 
@@ -1865,7 +1858,7 @@ module(
 );
 
 module(
-  "Integration | Admin | Plugins | Component | schema-setting/editor",
+  "Integration | Admin | Plugins | Component | SchemaSetting | Editor",
   function (hooks) {
     setupRenderingTest(hooks);
 
@@ -2196,13 +2189,13 @@ module(
         `${inputFields.fields.required_tags_with_validations.selector} .select-kit`
       );
 
-      assert.strictEqual(tagSelector.header().value(), "gazelle,cat");
+      assert.strictEqual(tagSelector.header().name(), "gazelle,cat");
 
       await tagSelector.expand();
       await tagSelector.selectRowByIndex(2);
       await tagSelector.collapse();
 
-      assert.strictEqual(tagSelector.header().value(), "gazelle,cat,dog");
+      assert.strictEqual(tagSelector.header().name(), "gazelle,cat,dog");
 
       await tagSelector.expand();
       await tagSelector.deselectItemByName("gazelle");
@@ -2225,7 +2218,7 @@ module(
       await tagSelector.expand();
       await tagSelector.selectRowByIndex(1);
 
-      assert.strictEqual(tagSelector.header().value(), "gazelle");
+      assert.strictEqual(tagSelector.header().name(), "gazelle");
 
       inputFields.refresh();
 

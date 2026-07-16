@@ -1,15 +1,15 @@
 import { array, fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { LinkTo } from "@ember/routing";
-import { htmlSafe } from "@ember/template";
-import LoadMore from "discourse/components/load-more";
-import formatDuration from "discourse/helpers/format-duration";
+import { trustHTML } from "@ember/template";
+import DLoadMore from "discourse/ui-kit/d-load-more";
+import dFormatDuration from "discourse/ui-kit/helpers/d-format-duration";
 import { i18n } from "discourse-i18n";
 
 export default <template>
   <h3>{{i18n "discourse_subscriptions.admin.dashboard.title"}}</h3>
 
-  <LoadMore
+  <DLoadMore
     @selector=".discourse-patrons-table tr"
     @action={{@controller.loadMore}}
   >
@@ -64,16 +64,16 @@ export default <template>
                   @route="patrons.show"
                   @model={{payment.payment_intent_id}}
                 >
-                  {{htmlSafe payment.payment_intent_id}}
+                  {{trustHTML payment.payment_intent_id}}
                 </LinkTo>
               </td>
               <td>{{payment.receipt_email}}</td>
-              <td>{{htmlSafe (formatDuration payment.created_at_age)}}</td>
+              <td>{{trustHTML (dFormatDuration payment.created_at_age)}}</td>
               <td class="amount">{{payment.amount_currency}}</td>
             </tr>
           {{/each}}
         </tbody>
       </table>
     {{/if}}
-  </LoadMore>
+  </DLoadMore>
 </template>

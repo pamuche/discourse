@@ -1,5 +1,6 @@
 import Service, { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
+import ChatMessage from "discourse/plugins/chat/discourse/models/chat-message";
 import UserChatChannelMembership from "discourse/plugins/chat/discourse/models/user-chat-channel-membership";
 import Collection from "../lib/collection";
 
@@ -10,7 +11,6 @@ import Collection from "../lib/collection";
  * @implements {@ember/service}
  */
 export default class ChatApi extends Service {
-  @service chat;
   @service chatChannelsManager;
 
   channel(channelId) {
@@ -441,17 +441,9 @@ export default class ChatApi extends Service {
         data,
       },
       ignoreUnsent: false,
-    })
-      .then(() => {
-        this.chat.markNetworkAsReliable();
-      })
-      .catch((error) => {
-        // we ignore a draft which can't be saved because it's too big
-        // and only deal with network error for now
-        if (!error.jqXHR?.responseJSON?.errors?.length) {
-          this.chat.markNetworkAsUnreliable();
-        }
-      });
+    }).catch(() => {
+      // we ignore a draft which can't be saved because it's too big
+    });
   }
 
   /**
@@ -469,6 +461,13 @@ export default class ChatApi extends Service {
         react_action: reactAction,
         emoji,
       },
+    });
+  }
+
+  messageReactionsUsers(channelId, messageId, { page = 0, limit, emoji } = {}) {
+    return ajax(`/chat/${channelId}/${messageId}/reactions-users`, {
+      type: "GET",
+      data: { page, limit, emoji },
     });
   }
 
@@ -626,6 +625,40 @@ export default class ChatApi extends Service {
    */
   removeMemberFromChannel(channelId, userId) {
     return this.#deleteRequest(`/channels/${channelId}/memberships/${userId}`);
+  }
+
+  pinMessage(channelId, messageId) {
+    return this.#postRequest(
+      `/channels/${channelId}/messages/${messageId}/pin`
+    );
+  }
+
+  unpinMessage(channelId, messageId) {
+    return this.#deleteRequest(
+      `/channels/${channelId}/messages/${messageId}/pin`
+    );
+  }
+
+  async pinnedMessages(channel) {
+    const response = await this.#getRequest(`/channels/${channel.id}/pins`);
+    const pinnedMessages = response.pinned_messages.map((pin) => {
+      const message = ChatMessage.create(channel, pin.message);
+      message.channel = channel;
+      return { ...pin, message };
+    });
+
+    if (response.membership && channel.currentUserMembership) {
+      channel.currentUserMembership.hasUnseenPins =
+        response.membership.has_unseen_pins;
+      channel.currentUserMembership.lastViewedPinsAt =
+        response.membership.last_viewed_pins_at;
+    }
+
+    return pinnedMessages;
+  }
+
+  markPinsAsRead(channelId) {
+    return this.#putRequest(`/channels/${channelId}/pins/read`);
   }
 
   get #basePath() {

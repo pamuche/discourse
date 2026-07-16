@@ -1,14 +1,14 @@
 import { hash } from "@ember/helper";
-import { click, render, triggerKeyEvent } from "@ember/test-helpers";
+import { click, findAll, render, triggerKeyEvent } from "@ember/test-helpers";
 import { module, test } from "qunit";
 import MiniTagChooser from "discourse/select-kit/components/mini-tag-chooser";
 import { setupRenderingTest } from "discourse/tests/helpers/component-test";
-import { queryAll } from "discourse/tests/helpers/qunit-helpers";
+import pretender, { response } from "discourse/tests/helpers/create-pretender";
 import selectKit from "discourse/tests/helpers/select-kit-helper";
 import { i18n } from "discourse-i18n";
 
 module(
-  "Integration | Component | select-kit/mini-tag-chooser",
+  "Integration | Component | SelectKit | MiniTagChooser",
   function (hooks) {
     setupRenderingTest(hooks);
 
@@ -17,7 +17,10 @@ module(
     });
 
     test("displays tags", async function (assert) {
-      this.set("value", ["foo", "bar"]);
+      this.set("value", [
+        { id: "foo", name: "foo", slug: "foo" },
+        { id: "bar", name: "bar", slug: "bar" },
+      ]);
 
       await render(
         <template><MiniTagChooser @value={{this.value}} /></template>
@@ -26,8 +29,86 @@ module(
       assert.strictEqual(this.subject.header().value(), "foo,bar");
     });
 
+    test("forwards prioritizeRecentTags to the server when the option is enabled", async function (assert) {
+      this.siteSettings.prioritize_recently_used_tags = true;
+      let capturedParams;
+      pretender.get("/tags/filter/search", (request) => {
+        capturedParams = request.queryParams;
+        return response({ results: [] });
+      });
+
+      await render(
+        <template>
+          <MiniTagChooser @options={{hash prioritizeRecentTags=true}} />
+        </template>
+      );
+      await this.subject.expand();
+
+      assert.strictEqual(
+        capturedParams.prioritizeRecentTags,
+        "true",
+        "the option is registered and forwarded as a request param"
+      );
+    });
+
+    test("keeps the server's recent-first order when tags_sort_alphabetically is enabled", async function (assert) {
+      this.siteSettings.tags_sort_alphabetically = true;
+      this.siteSettings.prioritize_recently_used_tags = true;
+      pretender.get("/tags/filter/search", () =>
+        response({
+          results: [
+            { id: "z-recent", name: "z-recent", count: 1 },
+            { id: "a-popular", name: "a-popular", count: 100 },
+          ],
+        })
+      );
+
+      await render(
+        <template>
+          <MiniTagChooser @options={{hash prioritizeRecentTags=true}} />
+        </template>
+      );
+      await this.subject.expand();
+
+      assert.deepEqual(
+        findAll(".select-kit-row").map((el) => el.dataset.value),
+        ["z-recent", "a-popular"],
+        "the recently used tag stays first instead of being sorted alphabetically"
+      );
+    });
+
+    test("still sorts alphabetically once a filter term is typed", async function (assert) {
+      this.siteSettings.tags_sort_alphabetically = true;
+      this.siteSettings.prioritize_recently_used_tags = true;
+      pretender.get("/tags/filter/search", () =>
+        response({
+          results: [
+            { id: "z-recent", name: "z-recent", count: 1 },
+            { id: "a-popular", name: "a-popular", count: 100 },
+          ],
+        })
+      );
+
+      await render(
+        <template>
+          <MiniTagChooser @options={{hash prioritizeRecentTags=true}} />
+        </template>
+      );
+      await this.subject.expand();
+      await this.subject.fillInFilter("recent");
+
+      assert.deepEqual(
+        findAll(".select-kit-row").map((el) => el.dataset.value),
+        ["a-popular", "z-recent"],
+        "recent-first ordering does not leak into the filtered view"
+      );
+    });
+
     test("create a tag", async function (assert) {
-      this.set("value", ["foo", "bar"]);
+      this.set("value", [
+        { id: "foo", name: "foo", slug: "foo" },
+        { id: "bar", name: "bar", slug: "bar" },
+      ]);
 
       await render(
         <template><MiniTagChooser @value={{this.value}} /></template>
@@ -38,21 +119,55 @@ module(
       await this.subject.expand();
       await this.subject.fillInFilter("mon");
       assert.deepEqual(
-        [...queryAll(".select-kit-row")].map((el) => el.textContent.trim()),
+        findAll(".select-kit-row").map((el) => el.textContent.trim()),
         ["monkey x1", "gazelle x2", "dog x3", "cat x4"]
       );
       await this.subject.fillInFilter("key");
       assert.deepEqual(
-        [...queryAll(".select-kit-row")].map((el) => el.textContent.trim()),
+        findAll(".select-kit-row").map((el) => el.textContent.trim()),
         ["monkey x1", "gazelle x2", "dog x3", "cat x4"]
       );
-      await this.subject.selectRowByValue("monkey");
+      await this.subject.selectRowByName("monkey");
 
-      assert.strictEqual(this.subject.header().value(), "foo,bar,monkey");
+      assert.strictEqual(this.subject.header().name(), "foo,bar,monkey");
+    });
+
+    test("navigating results with arrow keys after filtering", async function (assert) {
+      await render(
+        <template><MiniTagChooser @options={{hash allowAny=true}} /></template>
+      );
+
+      await this.subject.expand();
+      await this.subject.fillInFilter("mon");
+
+      assert.strictEqual(
+        this.subject.highlightedRow().name(),
+        "mon",
+        "the create-tag row is highlighted after filtering"
+      );
+
+      await this.subject.keyboard("down");
+
+      assert.strictEqual(
+        this.subject.highlightedRow().name(),
+        "monkey",
+        "a single down arrow press highlights the next row"
+      );
+
+      await this.subject.keyboard("up");
+
+      assert.strictEqual(
+        this.subject.highlightedRow().name(),
+        "mon",
+        "a single up arrow press highlights the previous row"
+      );
     });
 
     test("max_tags_per_topic", async function (assert) {
-      this.set("value", ["foo", "bar"]);
+      this.set("value", [
+        { id: "foo", name: "foo", slug: "foo" },
+        { id: "bar", name: "bar", slug: "bar" },
+      ]);
       this.siteSettings.max_tags_per_topic = 2;
 
       await render(
@@ -63,7 +178,7 @@ module(
 
       await this.subject.expand();
       await this.subject.fillInFilter("baz");
-      await this.subject.selectRowByValue("monkey");
+      await this.subject.selectRowByName("monkey");
 
       assert.dom(".select-kit-error").hasText(
         i18n("select_kit.max_content_reached", {
@@ -73,7 +188,10 @@ module(
     });
 
     test("disables search and shows limit when max_tags_per_topic is zero", async function (assert) {
-      this.set("value", ["cat", "kit"]);
+      this.set("value", [
+        { id: "cat", name: "cat", slug: "cat" },
+        { id: "kit", name: "kit", slug: "kit" },
+      ]);
       this.siteSettings.max_tags_per_topic = 0;
 
       await render(
@@ -95,7 +213,10 @@ module(
     });
 
     test("required_tag_group", async function (assert) {
-      this.set("value", ["foo", "bar"]);
+      this.set("value", [
+        { id: "foo", name: "foo", slug: "foo" },
+        { id: "bar", name: "bar", slug: "bar" },
+      ]);
 
       await render(
         <template>
@@ -118,7 +239,7 @@ module(
         })
       );
 
-      await this.subject.selectRowByValue("monkey");
+      await this.subject.selectRowByName("monkey");
 
       assert
         .dom("input[name=filter-input-search]")
@@ -159,8 +280,11 @@ module(
     });
 
     test("values in hiddenFromPreview will not display in preview", async function (assert) {
-      this.set("value", ["foo", "bar"]);
-      this.set("hiddenValues", ["foo"]);
+      this.set("value", [
+        { id: 1, name: "foo", slug: "foo" },
+        { id: 2, name: "bar", slug: "bar" },
+      ]);
+      this.set("hiddenValues", [{ id: 1, name: "foo", slug: "foo" }]);
 
       await render(
         <template>
@@ -174,7 +298,7 @@ module(
 
       await this.subject.expand();
       assert.deepEqual(
-        [...queryAll(".selected-content .selected-choice")].map((el) =>
+        findAll(".selected-content .selected-choice").map((el) =>
           el.textContent.trim()
         ),
         ["bar"]
@@ -193,7 +317,11 @@ module(
     });
 
     test("displays tags and filter in header", async function (assert) {
-      this.set("value", ["apple", "orange", "potato"]);
+      this.set("value", [
+        { id: 10, name: "apple", slug: "apple" },
+        { id: 11, name: "orange", slug: "orange" },
+        { id: 12, name: "potato", slug: "potato" },
+      ]);
 
       await render(
         <template>
@@ -204,7 +332,7 @@ module(
         </template>
       );
 
-      assert.strictEqual(this.subject.header().value(), "apple,orange,potato");
+      assert.strictEqual(this.subject.header().name(), "apple,orange,potato");
 
       assert.dom(".select-kit-header--filter").exists();
       assert.dom(".select-kit-header button[data-name='apple']").exists();
@@ -232,7 +360,11 @@ module(
     });
 
     test("removing a tag does not display the dropdown", async function (assert) {
-      this.set("value", ["apple", "orange", "potato"]);
+      this.set("value", [
+        { id: 10, name: "apple", slug: "apple" },
+        { id: 11, name: "orange", slug: "orange" },
+        { id: 12, name: "potato", slug: "potato" },
+      ]);
 
       await render(
         <template>
@@ -243,13 +375,13 @@ module(
         </template>
       );
 
-      assert.strictEqual(this.subject.header().value(), "apple,orange,potato");
+      assert.strictEqual(this.subject.header().name(), "apple,orange,potato");
 
       await click(".select-kit-header button[data-name='apple']");
 
       assert.dom(".select-kit-collection").doesNotExist();
       assert.dom(".select-kit-header button[data-name='apple']").doesNotExist();
-      assert.strictEqual(this.subject.header().value(), "orange,potato");
+      assert.strictEqual(this.subject.header().name(), "orange,potato");
 
       assert
         .dom(".select-kit-header .filter-input")

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-describe "Kick user from chat channel", type: :system do
+describe "Kick user from chat channel" do
   fab!(:current_user, :user)
   fab!(:channel_1, :chat_channel)
   fab!(:channel_2, :chat_channel)
@@ -8,7 +8,7 @@ describe "Kick user from chat channel", type: :system do
   let(:chat) { PageObjects::Pages::Chat.new }
   let(:channel) { PageObjects::Pages::ChatChannel.new }
   let(:dialog) { PageObjects::Components::Dialog.new }
-  let(:sidebar_page) { PageObjects::Pages::Sidebar.new }
+  let(:sidebar_page) { PageObjects::Pages::ChatSidebar.new }
 
   before do
     SiteSetting.navigation_menu = "sidebar"
@@ -52,7 +52,7 @@ describe "Kick user from chat channel", type: :system do
 
     it "removes it from their sidebar and does not redirect" do
       publish_kick
-      expect(sidebar_page.channels_section).not_to have_css(
+      expect(sidebar_page.channels_section).to have_no_css(
         ".sidebar-section-link.channel-#{channel_1.id}",
       )
     end

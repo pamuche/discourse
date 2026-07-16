@@ -2,10 +2,10 @@ import Component from "@glimmer/component";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
 import didInsert from "@ember/render-modifiers/modifiers/did-insert";
-import { htmlSafe } from "@ember/template";
-import concatClass from "discourse/helpers/concat-class";
-import emoji from "discourse/helpers/emoji";
+import { trustHTML } from "@ember/template";
 import discourseLater from "discourse/lib/later";
+import dConcatClass from "discourse/ui-kit/helpers/d-concat-class";
+import dEmoji from "discourse/ui-kit/helpers/d-emoji";
 
 const MYSTERY_EMOJIS = [
   "floppy_disk",
@@ -51,7 +51,7 @@ export default class WordCard extends Component {
   }
 
   get cardStyle() {
-    return htmlSafe(`${this.randomStyle}; ${this.mysteryData.color};`);
+    return trustHTML(`${this.randomStyle}; ${this.mysteryData.color};`);
   }
 
   @action
@@ -77,7 +77,7 @@ export default class WordCard extends Component {
     <div
       {{on "click" this.handleClick}}
       {{on "mouseleave" this.handleLeave}}
-      class={{concatClass
+      class={{dConcatClass
         "rewind-card__wrapper"
         (if this.longWord "--long-word")
       }}
@@ -88,13 +88,13 @@ export default class WordCard extends Component {
       <div class="rewind-card__inner">
         <div class="rewind-card --front">
           <span class="rewind-card__image tl">
-            {{emoji this.mysteryData.emoji}}
+            {{dEmoji this.mysteryData.emoji}}
           </span>
           <span class="rewind-card__image cr">
-            {{emoji this.mysteryData.emoji}}
+            {{dEmoji this.mysteryData.emoji}}
           </span>
           <span class="rewind-card__image br">
-            {{emoji this.mysteryData.emoji}}
+            {{dEmoji this.mysteryData.emoji}}
           </span>
         </div>
         <div class="rewind-card --back">

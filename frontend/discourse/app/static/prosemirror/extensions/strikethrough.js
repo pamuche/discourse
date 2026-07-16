@@ -1,4 +1,6 @@
-/** @type {RichEditorExtension} */
+// @ts-check
+
+/** @type {import("discourse/lib/composer/rich-editor-extensions").RichEditorExtension} */
 const extension = {
   markSpec: {
     strikethrough: {
@@ -6,6 +8,7 @@ const extension = {
       parseDOM: [
         { tag: "s" },
         { tag: "del" },
+        { tag: "strike" },
         {
           getAttrs: (value) =>
             /(^|[\s])line-through([\s]|$)/u.test(value) && null,

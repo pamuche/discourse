@@ -34,8 +34,17 @@ lv:
             canned_reply:
               label: "Atbilde"
     discourse_ai:
+      ai_tool_approval:
+        loading: "Ielādē..."
+        tool: "Darbība"
+        user: "Lietotājs"
+        approve: "Apstiprināt"
+        reject: "Noraidīt"
+        approved: "Apstiprināt"
+        rejected: "Noraidīts"
+      llm_selector:
+        none: "Nav"
       features:
-        back: "Atpakaļ"
         disabled: "(atslēgt)"
         groups: "Grupas:"
         no_groups: "Nav"
@@ -44,16 +53,22 @@ lv:
           zero: "(vēl %{count})"
           one: "(vēl %{count})"
           other: "(vēl %{count})"
+        nav:
+          enabled: "Ieslēgts"
         filters:
           all: "Visi"
           reset: "Atlikt"
         search:
           name: "Meklēt"
+        image_caption:
+          setting_groups:
+            settings: "Iestatījumi"
         spam:
           name: "Spams"
       modals:
         select_option: "Izvēlieties opciju..."
       translations:
+        category_scope: "Sadaļas"
         stats:
           eta_hours:
             zero: "%{count} stundas"
@@ -80,8 +95,7 @@ lv:
         total: "Kopā"
         periods:
           last_day: "Pēdējās 24 stundas"
-      ai_persona:
-        back: "Atpakaļ"
+      ai_agent:
         name: "Vārds"
         edit: "Labot"
         export: "Eksportēt"
@@ -91,6 +105,11 @@ lv:
         save: "Saglabāt"
         enabled: "Ieslēgts?"
         delete: "Dzēst"
+        thinking_effort_options:
+          none: "Nav"
+          low: "Zems"
+          medium: "Vidējs"
+          high: "Augsta"
         response_format:
           open_modal: "Labot"
         filters:
@@ -100,7 +119,6 @@ lv:
           title: "Augšupielādes"
           uploading: "Notiek ielāde..."
       tools:
-        back: "Atpakaļ"
         export: "Eksportēt"
         import: "Importēt"
         name: "Vārds"
@@ -111,11 +129,28 @@ lv:
         parameter_required: "Nepieciešams"
         edit: "Labot"
         delete: "Dzēst"
+      secrets:
+        short_title: "Atsauksme uz"
+        name: "Vārds"
+        secret: "Vērtība"
+        save: "Saglabāt"
+        edit: "Labot"
+        delete: "Dzēst"
+        embedding: "Ieguldīšana"
+      mcp_servers:
+        name: "Vārds"
+        description: "Apraksts"
+        url: "URL"
+        enabled: "Ieslēgts"
+        save: "Saglabāt"
+        edit: "Labot"
+        delete: "Dzēst"
+        tools_modal:
+          required: "Nepieciešams"
       llms:
         display_name: "Vārds"
         save: "Saglabāt"
         edit: "Labot"
-        back: "Atpakaļ"
         delete: Dzēst
         quotas:
           group: "Grupa"
@@ -141,10 +176,7 @@ lv:
           cancel: "Atcelt"
         thumbnail_suggestions:
           try_again: "Mēģināt vēlreiz"
-        image_caption:
-          save_caption: "Saglabāt"
       embeddings:
-        back: "Atpakaļ"
         save: "Saglabāt"
         delete: "Dzēst"
         edit: "Labot"

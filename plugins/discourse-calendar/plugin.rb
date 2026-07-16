@@ -11,6 +11,7 @@ libdir = File.join(File.dirname(__FILE__), "vendor/holidays/lib")
 $LOAD_PATH.unshift(libdir) if $LOAD_PATH.exclude?(libdir)
 
 require_relative "lib/calendar_settings_validator"
+require_relative "lib/calendar_custom_fields_validator"
 require_relative "lib/calendar_first_day_of_week"
 require_relative "lib/calendar_upcoming_events_default_view"
 
@@ -24,6 +25,7 @@ register_asset "stylesheets/common/discourse-post-event.scss"
 register_asset "stylesheets/common/discourse-post-event-preview.scss"
 register_asset "stylesheets/common/post-event-builder.scss"
 register_asset "stylesheets/common/discourse-post-event-invitees.scss"
+register_asset "stylesheets/common/composer-event-node-view.scss"
 register_asset "stylesheets/common/discourse-post-event-core-ext.scss"
 register_asset "stylesheets/mobile/discourse-post-event-core-ext.scss", :mobile
 register_asset "stylesheets/common/discourse-post-event-bulk-invite-modal.scss"
@@ -32,12 +34,20 @@ register_asset "stylesheets/mobile/discourse-post-event.scss", :mobile
 register_asset "stylesheets/colors.scss", :color_definitions
 register_asset "stylesheets/common/user-preferences.scss"
 register_asset "stylesheets/common/upcoming-events-list.scss"
+register_asset "stylesheets/common/livestream.scss"
+register_asset "stylesheets/desktop/livestream.scss", :desktop
+register_asset "stylesheets/mobile/livestream.scss", :mobile
 register_svg_icon "calendar-day"
 register_svg_icon "clock"
 register_svg_icon "file-csv"
 register_svg_icon "star"
 register_svg_icon "file-arrow-up"
 register_svg_icon "location-pin"
+register_svg_icon "arrows-up-to-line"
+extend_content_security_policy(
+  script_src: %w[https://source.zoom.us],
+  worker_src: %w[https://source.zoom.us blob:],
+)
 
 module ::DiscourseCalendar
   PLUGIN_NAME = "discourse-calendar"
@@ -57,6 +67,41 @@ module ::DiscourseCalendar
   # List of groups
   GROUP_TIMEZONES_CUSTOM_FIELD = "group-timezones"
 
+  module Livestream
+    LIVESTREAM_CHAT_STATUS_MESSAGE_BUS_CHANNEL = "/discourse-calendar/livestream/chat-status"
+
+    def self.handle_topic_chat_channel_creation(topic)
+      return if topic.category.blank?
+      return if DiscourseCalendar::Livestream::TopicChatChannel.exists?(topic_id: topic.id)
+      return unless topic.first_post&.event&.livestream?
+
+      channel =
+        Chat::Channel.create!(
+          chatable_id: topic.category.id,
+          chatable_type: "Category",
+          name: topic.title,
+          status: Chat::Channel.statuses[:open],
+          type: "CategoryChannel",
+          allow_channel_wide_mentions: true,
+        )
+
+      DiscourseCalendar::Livestream::TopicChatChannel.create!(topic: topic, chat_channel: channel)
+      channel.user_chat_channel_memberships.create!(user: topic.user, following: false)
+    end
+
+    def self.livestream_chat_status_channel(user_id)
+      "#{LIVESTREAM_CHAT_STATUS_MESSAGE_BUS_CHANNEL}/#{user_id}"
+    end
+
+    def self.publish_livestream_chat_status(membership, user:)
+      MessageBus.publish(
+        livestream_chat_status_channel(user.id),
+        Chat::UserChannelMembershipSerializer.new(membership, scope: user.guardian).to_json,
+        user_ids: [user.id],
+      )
+    end
+  end
+
   def self.users_on_holiday
     PluginStore.get(PLUGIN_NAME, USERS_ON_HOLIDAY_KEY) || []
   end
@@ -72,9 +117,13 @@ module ::DiscoursePostEvent
   # Topic where op has a post event custom field
   TOPIC_POST_EVENT_STARTS_AT = "TopicEventStartsAt"
   TOPIC_POST_EVENT_ENDS_AT = "TopicEventEndsAt"
+  TOPIC_POST_EVENT_ALL_DAY = "TopicEventAllDay"
 end
 
 require_relative "lib/discourse_calendar/engine"
+require_relative "lib/discourse_calendar/livestream/topic_extension"
+require_relative "lib/discourse_calendar/livestream/chat_channel_extension"
+require_relative "lib/discourse_calendar/livestream/zoom_url_parser"
 
 Dir
   .glob(File.expand_path("../lib/discourse_calendar/site_settings/*.rb", __FILE__))
@@ -82,6 +131,7 @@ Dir
 
 after_initialize do
   reloadable_patch do
+    register_category_type(DiscourseCalendar::Categories::Types::Events)
     Category.register_custom_field_type("sort_topics_by_event_start_date", :boolean)
     Category.register_custom_field_type("disable_topic_resorting", :boolean)
     register_preloaded_category_custom_fields("sort_topics_by_event_start_date")
@@ -129,6 +179,8 @@ after_initialize do
   require_relative "jobs/regular/discourse_post_event/bulk_invite"
   require_relative "jobs/regular/discourse_post_event/bump_topic"
   require_relative "jobs/regular/discourse_post_event/send_reminder"
+  require_relative "jobs/regular/discourse_post_event/warm_livestream_onebox"
+  require_relative "lib/discourse_post_event/email_renderer"
   require_relative "lib/discourse_post_event/engine"
   require_relative "lib/discourse_post_event/event_finder"
   require_relative "lib/discourse_post_event/event_parser"
@@ -136,15 +188,51 @@ after_initialize do
   require_relative "lib/discourse_post_event/export_csv_controller_extension"
   require_relative "lib/discourse_post_event/export_csv_file_extension"
   require_relative "lib/discourse_post_event/post_extension"
+  require_relative "lib/discourse_post_event/topic_extension"
   require_relative "lib/discourse_post_event/rrule_generator"
   require_relative "lib/discourse_post_event/rrule_configurator"
+  require_relative "lib/discourse_post_event/web_hook_extension"
 
   ::ActionController::Base.prepend_view_path File.expand_path("../app/views", __FILE__)
+
+  add_api_parameter_route(
+    methods: :get,
+    actions: "discourse_post_event/events#index",
+    formats: :ics,
+  )
+
+  add_user_api_key_scope :events_calendar,
+                         methods: :get,
+                         actions: "discourse_post_event/events#index",
+                         formats: :ics
+
+  register_calendar_subscription_feed(
+    name: "all_events",
+    scope: "discourse-calendar:events_calendar",
+    description_key: "discourse_calendar.preferences.all_events_description",
+    url: ->(base_url, _user, key) do
+      "#{base_url}/discourse-post-event/events.ics?user_api_key=#{key}"
+    end,
+  )
+
+  register_calendar_subscription_feed(
+    name: "my_events",
+    scope: "discourse-calendar:events_calendar",
+    description_key: "discourse_calendar.preferences.my_events_description",
+    url: ->(base_url, user, key) do
+      "#{base_url}/discourse-post-event/events.ics?attending_user=#{user.username_lower}&include_interested=true&user_api_key=#{key}"
+    end,
+  )
 
   reloadable_patch do
     ExportCsvController.prepend(DiscoursePostEvent::ExportCsvControllerExtension)
     Jobs::ExportCsvFile.prepend(DiscoursePostEvent::ExportPostEventCsvReportExtension)
+    Guardian.prepend(DiscoursePostEvent::GuardianExtension)
     Post.prepend(DiscoursePostEvent::PostExtension)
+    ::WebHook.prepend(DiscoursePostEvent::WebHookExtension)
+    Topic.prepend(DiscoursePostEvent::TopicExtension)
+    Topic.prepend(DiscourseCalendar::Livestream::TopicExtension)
+    Chat::Channel.prepend(DiscourseCalendar::Livestream::ChatChannelExtension)
   end
 
   add_to_class(:user, :can_create_discourse_post_event?) do
@@ -164,7 +252,7 @@ after_initialize do
   end
 
   add_to_class(:guardian, :can_act_on_invitee?) do |invitee|
-    user && (user.staff? || user.id == invitee.user_id)
+    user && (user.id == invitee.user_id || can_act_on_discourse_post_event?(invitee.event))
   end
 
   add_to_class(:guardian, :can_create_discourse_post_event?) do
@@ -176,14 +264,10 @@ after_initialize do
   end
 
   add_to_class(:user, :can_act_on_discourse_post_event?) do |event|
-    return @can_act_on_discourse_post_event if defined?(@can_act_on_discourse_post_event)
-    @can_act_on_discourse_post_event =
-      begin
-        return true if staff?
-        can_create_discourse_post_event? && Guardian.new(self).can_edit_post?(event.post)
-      rescue StandardError
-        false
-      end
+    return true if staff?
+    can_create_discourse_post_event? && Guardian.new(self).can_edit_post?(event.post)
+  rescue StandardError
+    false
   end
 
   add_to_class(:guardian, :can_act_on_discourse_post_event?) do |event|
@@ -196,7 +280,7 @@ after_initialize do
 
   TopicView.on_preload do |topic_view|
     if SiteSetting.discourse_post_event_enabled
-      topic_view.instance_variable_set(:@posts, topic_view.posts.includes(:event))
+      topic_view.instance_variable_set(:@posts, topic_view.posts.includes(event: :image_upload))
     end
   end
 
@@ -208,18 +292,43 @@ after_initialize do
     end,
   ) { DiscoursePostEvent::EventSerializer.new(object.event, scope: scope, root: false) }
 
-  on(:post_created) { |post| DiscoursePostEvent::Event.update_from_raw(post) }
+  on(:post_created) do |post|
+    DiscoursePostEvent::Event::SyncFromPost.call(params: { post_id: post.id })
+    post.association(:event).reload
+    if SiteSetting.discourse_post_event_enabled && post.event
+      WebHook.enqueue_calendar_event_hooks(:calendar_event_created, post.event)
+    end
+  end
 
-  on(:post_edited) { |post| DiscoursePostEvent::Event.update_from_raw(post) }
+  on(:post_edited) do |post|
+    event_before = post.event
+    had_image_before = event_before&.image_upload_id.present?
+    DiscoursePostEvent::Event::SyncFromPost.call(params: { post_id: post.id })
+    post.association(:event).reload
+
+    if SiteSetting.discourse_post_event_enabled
+      if post.event&.image_upload_id
+        post.event.sync_image_to_post_and_topic
+      elsif had_image_before
+        post.trigger_post_process
+      end
+      DiscoursePostEvent::Event.handle_post_event_webhooks(post, event_before)
+    end
+  end
 
   on(:post_destroyed) do |post|
     if SiteSetting.discourse_post_event_enabled && post.event
+      payload = WebHook.build_calendar_event_payload(post.event)
       post.event.update!(deleted_at: Time.now)
+      WebHook.enqueue_calendar_event_hooks(:calendar_event_destroyed, post.event, payload)
     end
   end
 
   on(:post_recovered) do |post|
-    post.event.update!(deleted_at: nil) if SiteSetting.discourse_post_event_enabled && post.event
+    if SiteSetting.discourse_post_event_enabled && post.event
+      post.event.update!(deleted_at: nil)
+      WebHook.enqueue_calendar_event_hooks(:calendar_event_created, post.event)
+    end
   end
 
   add_preloaded_topic_list_custom_field DiscoursePostEvent::TOPIC_POST_EVENT_STARTS_AT
@@ -236,7 +345,10 @@ after_initialize do
 
   add_to_class(:topic, :event_starts_at) do
     @event_starts_at ||=
-      Time.zone.parse(custom_fields[DiscoursePostEvent::TOPIC_POST_EVENT_STARTS_AT].to_s)
+      begin
+        value = custom_fields[DiscoursePostEvent::TOPIC_POST_EVENT_STARTS_AT].to_s
+        Time.find_zone("UTC").parse(value) if value.present?
+      end
   end
 
   add_to_serializer(
@@ -262,7 +374,10 @@ after_initialize do
 
   add_to_class(:topic, :event_ends_at) do
     @event_ends_at ||=
-      Time.zone.parse(custom_fields[DiscoursePostEvent::TOPIC_POST_EVENT_ENDS_AT].to_s)
+      begin
+        value = custom_fields[DiscoursePostEvent::TOPIC_POST_EVENT_ENDS_AT].to_s
+        Time.find_zone("UTC").parse(value) if value.present?
+      end
   end
 
   add_to_serializer(
@@ -273,6 +388,55 @@ after_initialize do
         SiteSetting.display_post_event_date_on_topic_title && object.event_ends_at
     end,
   ) { object.event_ends_at }
+
+  add_preloaded_topic_list_custom_field DiscoursePostEvent::TOPIC_POST_EVENT_ALL_DAY
+
+  add_to_serializer(
+    :topic_view,
+    :event_all_day,
+    include_condition: -> do
+      SiteSetting.discourse_post_event_enabled &&
+        SiteSetting.display_post_event_date_on_topic_title && object.topic.event_all_day
+    end,
+  ) { object.topic.event_all_day }
+
+  add_to_class(:topic, :event_all_day) do
+    return @event_all_day if defined?(@event_all_day)
+    @event_all_day =
+      begin
+        value = custom_fields[DiscoursePostEvent::TOPIC_POST_EVENT_ALL_DAY].to_s
+        ActiveModel::Type::Boolean.new.cast(value)
+      end
+  end
+
+  add_to_serializer(
+    :topic_list_item,
+    :event_all_day,
+    include_condition: -> do
+      SiteSetting.discourse_post_event_enabled &&
+        SiteSetting.display_post_event_date_on_topic_title && object.event_all_day
+    end,
+  ) { object.event_all_day }
+
+  add_to_serializer(
+    :topic_view,
+    :event_timezone,
+    include_condition: -> do
+      SiteSetting.discourse_post_event_enabled &&
+        SiteSetting.display_post_event_date_on_topic_title &&
+        object.topic.first_post&.event&.timezone.present?
+    end,
+  ) { object.topic.first_post.event.timezone }
+
+  add_to_serializer(
+    :topic_view,
+    :event_show_local_time,
+    include_condition: -> do
+      SiteSetting.discourse_post_event_enabled &&
+        SiteSetting.display_post_event_date_on_topic_title &&
+        object.topic.first_post&.event.present?
+    end,
+  ) { object.topic.first_post.event.show_local_time }
 
   # DISCOURSE CALENDAR
 
@@ -311,6 +475,11 @@ after_initialize do
     DiscourseCalendar::Calendar.update(post)
     DiscourseCalendar::GroupTimezones.update(post)
     CalendarEvent.update(post)
+
+    if SiteSetting.discourse_post_event_enabled
+      event = DiscoursePostEvent::Event.find_by(id: post.id)
+      event&.sync_image_to_post_and_topic(generate_thumbnails: true) if event&.image_upload_id
+    end
   end
 
   on(:post_recovered) do |post, _, _|
@@ -325,18 +494,18 @@ after_initialize do
   end
 
   validate(:post, :validate_calendar) do |force = nil|
-    return unless self.raw_changed? || force
+    return unless raw_changed? || force
 
     validator = DiscourseCalendar::CalendarValidator.new(self)
     validator.validate_calendar
   end
 
   validate(:post, :validate_event) do |force = nil|
-    return unless self.raw_changed? || force
-    return if self.is_first_post?
+    return unless raw_changed? || force
+    return if is_first_post?
 
     # Skip if not a calendar topic
-    return if !self.topic&.first_post&.custom_fields&.[](DiscourseCalendar::CALENDAR_CUSTOM_FIELD)
+    return if !topic&.first_post&.custom_fields&.[](DiscourseCalendar::CALENDAR_CUSTOM_FIELD)
 
     validator = DiscourseCalendar::EventValidator.new(self)
     validator.validate_event
@@ -451,11 +620,18 @@ after_initialize do
     group_names = group_timezones["groups"] || []
 
     if group_names.present?
+      visible_group_ids =
+        Group
+          .where(name: group_names)
+          .visible_groups(scope.user)
+          .members_visible_groups(scope.user)
+          .select(:id)
+
       users =
         User
           .human_users
           .joins(:groups, :user_option)
-          .where("groups.name": group_names)
+          .where(groups: { id: visible_group_ids })
           .select("users.*", "groups.name AS group_name", "user_options.timezone")
 
       usernames_on_holiday = DiscourseCalendar.users_on_holiday
@@ -482,18 +658,12 @@ after_initialize do
       fragment
         .css(".discourse-post-event")
         .each do |event_node|
-          starts_at = event_node["data-start"]
-          ends_at = event_node["data-end"]
-          dates = "#{starts_at} (#{event_node["data-timezone"] || "UTC"})"
-          dates = "#{dates} → #{ends_at} (#{event_node["data-timezone"] || "UTC"})" if ends_at
-
-          event_name = event_node["data-name"] || post.topic.title
-          event_node.replace <<~TXT
-          <div style='border:1px solid #dedede'>
-            <p><a href="#{Discourse.base_url}#{post.url}">#{CGI.escape_html(event_name)}</a></p>
-            <p>#{CGI.escape_html(dates)}</p>
-          </div>
-        TXT
+          event_node.replace(DiscoursePostEvent::EmailRenderer.render(event_node, post))
+        rescue => e
+          Discourse.warn_exception(
+            e,
+            message: "Failed to render event in email for post #{post&.id}",
+          )
         end
     end
   end
@@ -598,5 +768,74 @@ after_initialize do
     on_holiday_usernames = DiscourseCalendar.users_on_holiday
     report.data = (group_usernames & on_holiday_usernames).map { |username| { username: username } }
     report.total = report.data.count
+  end
+
+  register_anonymous_action("rsvp_event") do |user, params|
+    event_id = params["event_id"]
+    recurring = ActiveModel::Type::Boolean.new.cast(params["recurring"])
+    existing_invitee = DiscoursePostEvent::Invitee.find_by(post_id: event_id, user_id: user.id)
+
+    if existing_invitee
+      DiscoursePostEvent::UpdateInvitee.call(
+        params: {
+          event_id: event_id,
+          invitee_id: existing_invitee.id,
+          status: params["status"],
+          recurring: recurring,
+        },
+        guardian: user.guardian,
+      )
+    else
+      DiscoursePostEvent::CreateInvitee.call(
+        params: {
+          event_id: event_id,
+          status: params["status"],
+          recurring: recurring,
+          user_id: user.id,
+        },
+        guardian: user.guardian,
+      )
+    end
+  end
+
+  # DISCOURSE LIVESTREAM
+
+  add_to_serializer(
+    :topic_view,
+    :chat_channel_id,
+    include_condition: -> do
+      object.topic.first_post&.event&.livestream? && object.topic.topic_chat_channel.present?
+    end,
+  ) { object.topic.topic_chat_channel.chat_channel_id }
+
+  add_to_serializer(:topic_view, :has_livestream) { object.topic.first_post&.event&.livestream? }
+
+  on(:chat_channel_trashed) do |channel, user|
+    # If the chat channel is deleted, delete the related TopicChatChannel record
+    DiscourseCalendar::Livestream::TopicChatChannel.where(chat_channel_id: channel.id).destroy_all
+  end
+
+  on(:discourse_calendar_post_event_invitee_status_changed) do |invitee|
+    topic = invitee.event.post.topic
+    topic_chat_channel = topic.topic_chat_channel
+
+    next if !topic_chat_channel
+
+    user = User.find(invitee.user_id)
+    channel = topic_chat_channel.chat_channel
+    manager = Chat::ChannelMembershipManager.new(channel)
+
+    # Attendance is the chat gate: anyone going is auto-followed into the
+    # livestream channel, anyone else is unfollowed.
+    membership =
+      if invitee.status == DiscoursePostEvent::Invitee.statuses[:going]
+        manager.follow(user)
+      else
+        manager.unfollow(user)
+      end
+
+    if membership
+      DiscourseCalendar::Livestream.publish_livestream_chat_status(membership, user: user)
+    end
   end
 end

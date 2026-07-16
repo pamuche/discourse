@@ -67,20 +67,25 @@ class ProblemCheck
   #
   CORE_PROBLEM_CHECKS = [
     ProblemCheck::BadFaviconUrl,
+    ProblemCheck::ContentSecurityPolicyDisabled,
+    ProblemCheck::EmailSendingFailures,
     ProblemCheck::EmailPollingErroredRecently,
     ProblemCheck::FacebookConfig,
     ProblemCheck::FailingEmails,
     ProblemCheck::ForceHttps,
     ProblemCheck::GithubConfig,
+    ProblemCheck::GithubOneboxBackoff,
     ProblemCheck::GoogleAnalyticsVersion,
     ProblemCheck::GoogleOauth2Config,
     ProblemCheck::GroupEmailCredentials,
     ProblemCheck::HostNames,
     ProblemCheck::ImageMagick,
+    ProblemCheck::MissingAwsSnsTopicArn,
     ProblemCheck::MissingMailgunApiKey,
     ProblemCheck::OutOfDateThemes,
     ProblemCheck::PollPop3Timeout,
     ProblemCheck::PollPop3AuthError,
+    ProblemCheck::QqMailSmtp,
     ProblemCheck::RailsEnv,
     ProblemCheck::Ram,
     ProblemCheck::S3BackupConfig,
@@ -153,6 +158,13 @@ class ProblemCheck
     targets.call.each(&)
   end
 
+  def self.cleanup_trackers
+    current_targets = targets.call
+    return if current_targets.empty?
+
+    ProblemCheckTracker.where(identifier:).where.not(target: current_targets).destroy_all
+  end
+
   def initialize(target = NO_TARGET)
     @target = target
   end
@@ -164,9 +176,15 @@ class ProblemCheck
   end
 
   def run
+    # Never run a targeted check with NO_TARGET (stale job or default targets used by mistake).
+    if target == NO_TARGET && targeted?
+      tracker.destroy
+      return
+    end
+
     # target is always a string when initializing this class, but the targets function
     # could return IDs from the DB. Make everything string so we don't return early all the time.
-    if targeted? && (target == NO_TARGET || targets.call.map(&:to_s).exclude?(target))
+    if targeted? && targets.call.map(&:to_s).exclude?(target)
       tracker.destroy
       return
     end
@@ -180,10 +198,7 @@ class ProblemCheck
     if problem.blank?
       tracker.no_problem!(next_run_at:)
     else
-      tracker.problem!(
-        next_run_at:,
-        details: translation_data.merge(problem.details).merge(base_path: Discourse.base_path),
-      )
+      tracker.problem!(next_run_at:, details: problem.details.merge(base_path: Discourse.base_path))
     end
   end
 
@@ -199,19 +214,17 @@ class ProblemCheck
 
   def problem(target = nil, override_key: nil, override_data: {}, details: {})
     target_identifier = target.kind_of?(ActiveRecord::Base) ? target.id : target
+    problem_details =
+      override_data.merge(
+        target.present? ? translation_data(target) : translation_data,
+      ).symbolize_keys
 
     Problem.new(
-      I18n.t(
-        override_key || translation_key,
-        base_path: Discourse.base_path,
-        **override_data.merge(
-          target.present? ? translation_data(target) : translation_data,
-        ).symbolize_keys,
-      ),
-      priority: self.config.priority,
+      I18n.t(override_key || translation_key, base_path: Discourse.base_path, **problem_details),
+      priority: config.priority,
       identifier:,
       target: target_identifier,
-      details:,
+      details: problem_details.merge(details),
     )
   end
 

@@ -1,12 +1,19 @@
-import { camelize } from "@ember/string";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { buildBBCodeAttrs } from "discourse/lib/text";
-import { buildEventPreview } from "../initializers/discourse-post-event-decorator";
+import EventNodeView from "../components/event-node-view";
+import { buildEventPreview } from "../lib/event-preview";
+import {
+  buildEventSkeleton,
+  camelCase,
+  getCustomFieldNames,
+} from "../lib/raw-event-helper";
 
-const EVENT_ATTRIBUTES = {
+export const EVENT_ATTRIBUTES = {
   name: { default: null },
   start: { default: null },
   end: { default: null },
+  location: { default: null },
+  maxAttendees: { default: null },
   reminders: { default: null },
   minimal: { default: null },
   closed: { default: null },
@@ -17,19 +24,32 @@ const EVENT_ATTRIBUTES = {
   recurrence: { default: null },
   recurrenceUntil: { default: null },
   chatEnabled: { default: null },
-  chatChannelId: { default: null },
+  livestream: { default: null },
+  allDay: { default: null },
+  image: { default: null },
 };
 
-/** @type {RichEditorExtension} */
-const extension = {
+/** @returns {RichEditorExtension} */
+const buildExtension = (siteSettings) => ({
+  nodeViews: {
+    event: {
+      component: EventNodeView,
+    },
+  },
+
   nodeSpec: {
     event: {
-      attrs: EVENT_ATTRIBUTES,
+      get attrs() {
+        const attrs = { ...EVENT_ATTRIBUTES };
+        getCustomFieldNames(siteSettings).forEach((field) => {
+          attrs[camelCase(field)] = { default: null };
+        });
+        return attrs;
+      },
       group: "block",
       content: "block*",
       defining: true,
       isolating: true,
-      draggable: true,
       parseDOM: [
         {
           tag: "div.discourse-post-event",
@@ -69,7 +89,7 @@ const extension = {
           const attrs = Object.fromEntries(
             token.attrs
               .filter(([key]) => key.startsWith("data-"))
-              .map(([key, value]) => [camelize(key.slice(5)), value])
+              .map(([key, value]) => [camelCase(key.slice(5)), value])
           );
 
           state.openNode(state.schema.nodes.event, attrs);
@@ -93,12 +113,27 @@ const extension = {
       state.write("[/event]\n");
     },
   },
-};
+  inputRules: ({ utils: { convertFromMarkdown }, getContext }) => ({
+    match: /^\[event([^\]]*)]$/,
+    handler: (state, match, start, end) => {
+      const userInput = match[1].trim();
+      const eventMarkdown = userInput
+        ? `[event ${userInput}]\n[/event]`
+        : buildEventSkeleton(getContext().currentUser);
+
+      const doc = convertFromMarkdown(eventMarkdown);
+      return doc.content.firstChild
+        ? state.tr.replaceWith(start, end, doc.content.firstChild)
+        : null;
+    },
+  }),
+});
 
 export default {
   initialize() {
     withPluginApi((api) => {
-      api.registerRichEditorExtension(extension);
+      const siteSettings = api.container.lookup("service:site-settings");
+      api.registerRichEditorExtension(buildExtension(siteSettings));
     });
   },
 };

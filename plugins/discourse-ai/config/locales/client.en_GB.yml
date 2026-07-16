@@ -13,10 +13,14 @@ en_GB:
             categories:
               label: "Categories"
     discourse_ai:
+      translations:
+        category_scope: "Categories"
       usage:
         summary: "Summary"
-      ai_persona:
+      ai_agent:
         description: "Description"
       tools:
         description: "Description"
         summary: "Summary"
+      mcp_servers:
+        description: "Description"

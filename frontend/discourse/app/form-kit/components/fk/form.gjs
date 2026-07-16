@@ -5,15 +5,16 @@ import { on } from "@ember/modifier";
 import { action } from "@ember/object";
 import { getOwner } from "@ember/owner";
 import didInsert from "@ember/render-modifiers/modifiers/did-insert";
+import { scheduleOnce } from "@ember/runloop";
 import { service } from "@ember/service";
 import curryComponent from "ember-curry-component";
-import DButton from "discourse/components/d-button";
 import { getScrollParent } from "discourse/float-kit/lib/get-scroll-parent";
 import FKAlert from "discourse/form-kit/components/fk/alert";
 import FKCheckboxGroup from "discourse/form-kit/components/fk/checkbox-group";
 import FKCollection from "discourse/form-kit/components/fk/collection";
 import FKContainer from "discourse/form-kit/components/fk/container";
 import FKControlConditionalContent from "discourse/form-kit/components/fk/control/conditional-content";
+import FKEmphasis from "discourse/form-kit/components/fk/emphasis";
 import FKErrorsSummary from "discourse/form-kit/components/fk/errors-summary";
 import FKField from "discourse/form-kit/components/fk/field";
 import FKFieldset from "discourse/form-kit/components/fk/fieldset";
@@ -25,6 +26,7 @@ import FKSubmit from "discourse/form-kit/components/fk/submit";
 import { VALIDATION_TYPES } from "discourse/form-kit/lib/constants";
 import FKFormData from "discourse/form-kit/lib/fk-form-data";
 import { headerOffset } from "discourse/lib/offset-calculator";
+import DButton from "discourse/ui-kit/d-button";
 import { i18n } from "discourse-i18n";
 
 class FKForm extends Component {
@@ -39,17 +41,25 @@ class FKForm extends Component {
 
   formData = new FKFormData(this.args.data ?? {});
 
+  #pendingRegistrations = new Set();
+
   constructor() {
     super(...arguments);
 
+    const instance = this;
     this.args.onRegisterApi?.({
       set: this.set,
       setProperties: this.setProperties,
       get: this.get,
+      commitField: this.commitField,
       submit: this.onSubmit,
       reset: this.onReset,
       addError: this.addError,
       removeError: this.removeError,
+      removeErrors: this.removeErrors,
+      get isDirty() {
+        return instance.formData.isDirty;
+      },
     });
 
     this.router.on("routeWillChange", this.checkIsDirty);
@@ -63,12 +73,16 @@ class FKForm extends Component {
 
   @action
   async checkIsDirty(transition) {
-    let triggerConfirm = false;
+    let triggerConfirm;
+
+    // In some cases (e.g., subroute -> parent),
+    // queryParamsOnly is true even though the route name changes
+    const routeChanging = transition.to?.name !== transition.from?.name;
 
     const shouldCheck =
       this.formData.isDirty &&
       !transition.isAborted &&
-      !transition.queryParamsOnly;
+      (!transition.queryParamsOnly || routeChanging);
 
     if (this.args.onDirtyCheck) {
       triggerConfirm = shouldCheck && this.args.onDirtyCheck(transition);
@@ -138,6 +152,11 @@ class FKForm extends Component {
   }
 
   @action
+  removeErrors() {
+    this.formData.removeErrors();
+  }
+
+  @action
   registerFormElement(element) {
     this.formElement = element;
   }
@@ -171,6 +190,16 @@ class FKForm extends Component {
     if (this.fieldValidationEvent === VALIDATION_TYPES.change) {
       await this.triggerRevalidationFor(name);
     }
+
+    if (this.args.onSet) {
+      await this.args.onSet(name, value, this.formData.draftData);
+      this.formData.save();
+    }
+  }
+
+  @action
+  commitField(name) {
+    this.formData.commitField(name);
   }
 
   @action
@@ -198,14 +227,27 @@ class FKForm extends Component {
     }
 
     if (this.fields.has(name)) {
-      throw new Error(
-        `@name="${name}", is already in use. Names of \`<form.Field />\` must be unique!`
-      );
+      this.fields.delete(name);
     }
 
     this.fields.set(name, field);
 
+    if (this.fieldValidationEvent) {
+      this.#pendingRegistrations.add(field);
+      scheduleOnce("afterRender", this, this.validatePendingRegistrations);
+    }
+
     return field;
+  }
+
+  @action
+  async validatePendingRegistrations() {
+    if (this.#pendingRegistrations.size === 0) {
+      return;
+    }
+    const fields = [...this.#pendingRegistrations];
+    this.#pendingRegistrations.clear();
+    await this.validate(fields);
   }
 
   @action
@@ -259,7 +301,10 @@ class FKForm extends Component {
       return;
     }
 
-    if (this.formData.errors[name]) {
+    if (
+      this.fieldValidationEvent === VALIDATION_TYPES.change ||
+      this.formData.errors[name]
+    ) {
       await this.validate([field]);
     }
   }
@@ -306,6 +351,7 @@ class FKForm extends Component {
         (hash
           Row=Row
           Section=FKSection
+          Emphasis=FKEmphasis
           Fieldset=FKFieldset
           ConditionalContent=(component FKControlConditionalContent)
           Container=FKContainer
@@ -334,6 +380,7 @@ class FKForm extends Component {
           CheckboxGroup=(this.componentFor FKCheckboxGroup)
           set=this.set
           setProperties=this.setProperties
+          commitField=this.commitField
           addItemToCollection=this.addItemToCollection
         )
         this.formData.draftData
@@ -351,6 +398,7 @@ const Form = <template>
       @validateOn={{@validateOn}}
       @onRegisterApi={{@onRegisterApi}}
       @onReset={{@onReset}}
+      @onSet={{@onSet}}
       @onDirtyCheck={{@onDirtyCheck}}
       ...attributes
       as |components draftData|

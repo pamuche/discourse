@@ -1,12 +1,12 @@
-import { htmlSafe } from "@ember/template";
-import AdminFilterControls from "discourse/admin/components/admin-filter-controls";
+import { trustHTML } from "@ember/template";
 import ColorPaletteListItem from "discourse/admin/components/color-palette-list-item";
-import DBreadcrumbsItem from "discourse/components/d-breadcrumbs-item";
-import DPageHeader from "discourse/components/d-page-header";
-import DPageSubheader from "discourse/components/d-page-subheader";
 import PluginOutlet from "discourse/components/plugin-outlet";
 import lazyHash from "discourse/helpers/lazy-hash";
 import getUrl from "discourse/lib/get-url";
+import DBreadcrumbsItem from "discourse/ui-kit/d-breadcrumbs-item";
+import DFilterControls from "discourse/ui-kit/d-filter-controls";
+import DPageHeader from "discourse/ui-kit/d-page-header";
+import DPageSubheader from "discourse/ui-kit/d-page-subheader";
 import { i18n } from "discourse-i18n";
 
 const FILTER_MINIMUM = 8;
@@ -45,7 +45,7 @@ export default <template>
   {{#if @controller.preferencesWarningMessage}}
     <p class="color-palette__warning">
       {{#if @controller.preferencesWarningMessage.usingNonDefaultTheme}}
-        {{htmlSafe
+        {{trustHTML
           (i18n
             "admin.customize.colors.non_default_theme_warning"
             themeName=@controller.preferencesWarningMessage.themeName
@@ -53,7 +53,7 @@ export default <template>
           )
         }}
       {{else}}
-        {{htmlSafe
+        {{trustHTML
           (i18n
             "admin.customize.colors.custom_schemes_warning"
             colorModes=@controller.preferencesWarningMessage.colorModes
@@ -64,11 +64,13 @@ export default <template>
     </p>
   {{/if}}
 
-  <AdminFilterControls
+  <DFilterControls
     @array={{@controller.displayedPalettes}}
     @minItemsForFilter={{FILTER_MINIMUM}}
     @searchableProps={{@controller.searchableProps}}
     @dropdownOptions={{@controller.dropdownOptions}}
+    @textFilterQueryParam="filter"
+    @dropdownFilterQueryParam="type"
     @inputPlaceholder={{i18n
       "admin.customize.colors.filters.search_placeholder"
     }}
@@ -89,5 +91,5 @@ export default <template>
         {{/each}}
       </ul>
     </:content>
-  </AdminFilterControls>
+  </DFilterControls>
 </template>

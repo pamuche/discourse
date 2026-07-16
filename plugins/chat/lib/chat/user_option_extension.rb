@@ -2,14 +2,7 @@
 
 module Chat
   module UserOptionExtension
-    # TODO: remove last_emailed_for_chat and chat_isolated in 2023
     def self.prepended(base)
-      if base.ignored_columns
-        base.ignored_columns = base.ignored_columns + %i[last_emailed_for_chat chat_isolated]
-      else
-        base.ignored_columns = %i[last_emailed_for_chat chat_isolated]
-      end
-
       def base.chat_email_frequencies
         @chat_email_frequencies ||= { never: 0, when_away: 1 }
       end
@@ -56,6 +49,14 @@ module Chat
 
       if !base.method_defined?(:show_thread_title_prompts?)
         base.attribute :show_thread_title_prompts, :boolean, default: true
+      end
+
+      if !base.method_defined?(:chat_announce_new_messages?)
+        base.attribute :chat_announce_new_messages, :boolean, default: true
+      end
+
+      if !base.method_defined?(:chat_new_message_sound?)
+        base.attribute :chat_new_message_sound, :boolean, default: false
       end
 
       if !base.method_defined?(:chat_quick_reaction_type_frequent?)

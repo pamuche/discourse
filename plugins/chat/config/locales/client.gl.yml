@@ -12,14 +12,21 @@ gl:
           always: "Sempre"
           never: "Nunca"
     chat:
+      edit_category:
+        channel: "Canle"
+        description: "Descrición"
+        actions: "Accións"
+        settings: "Configuración"
       deleted_chat_username: eliminado
       dates:
         yesterday: "Onte"
       create: "Crear"
       cancel: "Cancelar"
+      pinned: "Fixado"
       channel_settings:
         edit: "Editar"
         add: "Engadir"
+        notification_settings_context: "Notificacións"
         join: "Participar"
         leave: "Abandonar"
       close: "Pechar"
@@ -73,6 +80,7 @@ gl:
         title: Nova mensaxe
         prefix: "A:"
       create_channel:
+        description: "Descrición"
         type: "Tipo"
         types:
           category: "Categoría"
@@ -163,3 +171,12 @@ gl:
           fields:
             message:
               label: Mensaxe
+    discourse_workflows:
+      chat_message_created:
+        channel_id: "Canle"
+      send_chat_message:
+        channel_id: "Canle"
+        message: "Mensaxe"
+      chat_approval:
+        message: "Mensaxe"
+        channel_id: "Canle"

@@ -8,6 +8,7 @@ DiscourseAutomation::Scriptable.add(DiscourseAutomation::Scripts::SET_TOPIC_TIME
             { id: "auto_close", name: "topic.auto_close.title" },
             { id: "auto_close_after_last_post", name: "topic.auto_close_after_last_post.title" },
             { id: "auto_delete", name: "topic.auto_delete.title" },
+            { id: "auto_delete_after_last_post", name: "topic.auto_delete_after_last_post.title" },
             { id: "auto_delete_replies", name: "topic.auto_delete_replies.title" },
             { id: "auto_bump", name: "topic.auto_bump.title" },
           ],
@@ -26,6 +27,10 @@ DiscourseAutomation::Scriptable.add(DiscourseAutomation::Scripts::SET_TOPIC_TIME
 
     next if !post.topic
     next unless topic = Topic.find_by(id: post.topic_id)
+
+    # Saving a close timer on a closed topic would reopen it via
+    # TopicTimer#after_save (intended for the "Close Temporarily" UI flow).
+    next if topic.closed? && %w[auto_close auto_close_after_last_post].include?(timer_type)
 
     duration_minutes = fields.dig("duration", "value")
 
@@ -46,6 +51,13 @@ DiscourseAutomation::Scriptable.add(DiscourseAutomation::Scripts::SET_TOPIC_TIME
       topic.set_or_create_timer(
         TopicTimer.types[:delete],
         (Time.now + duration_minutes.minutes).iso8601,
+      )
+    when "auto_delete_after_last_post"
+      topic.set_or_create_timer(
+        TopicTimer.types[:delete],
+        nil,
+        based_on_last_post: true,
+        duration_minutes:,
       )
     when "auto_delete_replies"
       topic.set_or_create_timer(TopicTimer.types[:delete_replies], nil, duration_minutes:)

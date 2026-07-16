@@ -8,10 +8,25 @@ RSpec.describe ListController do
 
   before do
     admin # to skip welcome wizard at home page `/`
-    SiteSetting.top_menu = "latest|new|unread|categories"
+    SiteSetting.top_menu = "latest|new|categories"
   end
 
   describe "#index" do
+    it "does not expose the Klipy API key in anonymous preloaded site settings" do
+      SiteSetting.klipy_api_key = "super-secret-klipy-key"
+
+      get "/latest"
+
+      expect(response.status).to eq(200)
+      expect(response.body).not_to include(SiteSetting.klipy_api_key)
+      expect(response.body).to have_tag("div#data-preloaded") do |element|
+        data_preloaded = JSON.parse(element.current_scope.attribute("data-preloaded").value)
+        site_settings = JSON.parse(data_preloaded["siteSettings"])
+
+        expect(site_settings).not_to have_key("klipy_api_key")
+      end
+    end
+
     context "when params are invalid" do
       it "should return a 400 response when `page` param is a string that represent a negative integer" do
         get "/latest?page=-1"
@@ -231,7 +246,9 @@ RSpec.describe ListController do
           body = response.parsed_body
 
           expect(body["topic_list"]["topics"].map { |t| t["id"] }).to contain_exactly(topic.id)
-          expect(body["topic_list"]["topics"][0]["tags"]).to contain_exactly(tag.name)
+          expect(body["topic_list"]["topics"][0]["tags"]).to contain_exactly(
+            { "id" => tag.id, "name" => tag.name, "slug" => tag.slug },
+          )
         end.count
 
       tag2 = Fabricate(:tag)
@@ -250,8 +267,12 @@ RSpec.describe ListController do
             topic2.id,
           )
 
-          expect(body["topic_list"]["topics"][0]["tags"]).to contain_exactly(tag2.name)
-          expect(body["topic_list"]["topics"][1]["tags"]).to contain_exactly(tag.name)
+          expect(body["topic_list"]["topics"][0]["tags"]).to contain_exactly(
+            { "id" => tag2.id, "name" => tag2.name, "slug" => tag2.slug },
+          )
+          expect(body["topic_list"]["topics"][1]["tags"]).to contain_exactly(
+            { "id" => tag.id, "name" => tag.name, "slug" => tag.slug },
+          )
         end.count
 
       expect(new_sql_queries_count).to eq(initial_sql_queries_count)
@@ -332,7 +353,7 @@ RSpec.describe ListController do
       before { topic.update!(category: subcategory) }
 
       it "returns categories and parent categories if true" do
-        SiteSetting.lazy_load_categories_groups = "#{Group::AUTO_GROUPS[:everyone]}"
+        SiteSetting.lazy_load_categories_groups = "#{Group::AUTO_GROUPS[:anonymous_users]}"
 
         get "/latest.json"
 
@@ -360,7 +381,6 @@ RSpec.describe ListController do
     context "when login required" do
       before do
         SiteSetting.login_required = true
-        SiteSetting.bootstrap_mode_enabled = false
         SiteSetting.has_login_hint = false
       end
 
@@ -472,9 +492,48 @@ RSpec.describe ListController do
 
       expect(response.status).to eq(200)
     end
+
+    it "returns only visible tagged private messages" do
+      SiteSetting.personal_message_enabled_groups = Group::AUTO_GROUPS[:staff]
+      SiteSetting.pm_tags_allowed_for_groups = group.name
+      group.add(user)
+      group.update!(has_messages: true)
+      direct_message = Fabricate(:private_message_topic, user: admin, recipient: user)
+      group_message = Fabricate(:group_private_message_topic, user: admin, recipient_group: group)
+      Fabricate(:topic_tag, tag: tag, topic: direct_message)
+      Fabricate(:topic_tag, tag: tag, topic: group_message)
+
+      sign_in(user)
+      get "/topics/private-messages-group/#{user.username}/#{group.name}.json"
+
+      expect(response.status).to eq(404)
+
+      get "/topics/private-messages-tags/#{user.username}/#{tag.name}.json"
+
+      expect(response.status).to eq(200)
+      topic_ids = response.parsed_body["topic_list"]["topics"].map { |topic| topic["id"] }
+      expect(topic_ids).to contain_exactly(direct_message.id)
+    end
   end
 
   describe "#private_messages_group" do
+    describe "#private_messages_group_new and #private_messages_group_unread" do
+      before do
+        group.add(user)
+        sign_in(user)
+      end
+
+      it "enforces can_see_group_messages? when personal messages are disabled for the user" do
+        SiteSetting.personal_message_enabled_groups = Group::AUTO_GROUPS[:staff]
+
+        get "/topics/private-messages-group/#{user.username}/#{group.name}/new.json"
+        expect(response.status).to eq(404)
+
+        get "/topics/private-messages-group/#{user.username}/#{group.name}/unread.json"
+        expect(response.status).to eq(404)
+      end
+    end
+
     describe "when user not in personal_message_enabled_groups group" do
       let!(:topic) { Fabricate(:private_message_topic, allowed_groups: [group]) }
 
@@ -696,6 +755,73 @@ RSpec.describe ListController do
       expect(response.body).to_not include("<item>")
     end
 
+    it "advertises sanitized filtered feed URLs in RSS metadata" do
+      TopTopic.create!(topic: topic, yearly_score: 1.0)
+      api_key = ApiKey.create!(user_id: user.id, created_by_id: Discourse.system_user)
+
+      get "/latest.rss",
+          params: {
+            exclude_tag: "excludeme",
+            api_key: api_key.key,
+            api_username: user.username_lower,
+          }
+
+      expect(response.status).to eq(200)
+      expect(response.media_type).to eq("application/rss+xml")
+
+      latest_doc = Nokogiri::XML::Document.parse(response.body)
+      latest_atom_link =
+        URI.parse(
+          latest_doc.at_xpath(
+            "/rss/channel/atom:link",
+            { "atom" => "http://www.w3.org/2005/Atom" },
+          )[
+            "href"
+          ],
+        )
+      latest_link = URI.parse(latest_doc.at_xpath("/rss/channel/link").text)
+
+      expect(latest_atom_link.path).to eq("/latest.rss")
+      expect(Rack::Utils.parse_nested_query(latest_atom_link.query.to_s)).to eq(
+        "exclude_tag" => "excludeme",
+      )
+      expect(latest_link.path).to eq("/latest")
+      expect(Rack::Utils.parse_nested_query(latest_link.query.to_s)).to eq(
+        "exclude_tag" => "excludeme",
+      )
+
+      get "/top.rss",
+          params: {
+            period: "yearly",
+            exclude_tag: "excludeme",
+            api_key: api_key.key,
+            api_username: user.username_lower,
+          }
+
+      expect(response.status).to eq(200)
+      expect(response.media_type).to eq("application/rss+xml")
+
+      top_doc = Nokogiri::XML::Document.parse(response.body)
+      top_atom_link =
+        URI.parse(
+          top_doc.at_xpath("/rss/channel/atom:link", { "atom" => "http://www.w3.org/2005/Atom" })[
+            "href"
+          ],
+        )
+      top_link = URI.parse(top_doc.at_xpath("/rss/channel/link").text)
+
+      expect(top_atom_link.path).to eq("/top.rss")
+      expect(Rack::Utils.parse_nested_query(top_atom_link.query.to_s)).to eq(
+        "exclude_tag" => "excludeme",
+        "period" => "yearly",
+      )
+      expect(top_link.path).to eq("/top")
+      expect(Rack::Utils.parse_nested_query(top_link.query.to_s)).to eq(
+        "exclude_tag" => "excludeme",
+        "period" => "yearly",
+      )
+    end
+
     it "renders links correctly with subfolder" do
       set_subfolder "/forum"
       _post = Fabricate(:post, topic: topic, user: user)
@@ -721,6 +847,83 @@ RSpec.describe ListController do
         get "/top.rss?period=#{period}"
         expect(response.status).to eq(200)
         expect(response.media_type).to eq("application/rss+xml")
+      end
+    end
+
+    describe "RSS feeds ignore current user" do
+      fab!(:muted_topic, :topic)
+
+      before do
+        Fabricate(:post, topic: muted_topic)
+        sign_in(user)
+        TopicUser.change(
+          user.id,
+          muted_topic.id,
+          notification_level: TopicUser.notification_levels[:muted],
+        )
+      end
+
+      it "includes muted topics in top RSS" do
+        TopTopic.create!(topic: muted_topic, yearly_score: 1.0)
+        get "/top.rss?period=yearly"
+        expect(response.status).to eq(200)
+        expect(response.body).to include(muted_topic.title)
+      end
+
+      it "includes muted topics in hot RSS" do
+        TopicHotScore.create!(topic: muted_topic, score: 1.0)
+        get "/hot.rss"
+        expect(response.status).to eq(200)
+        expect(response.body).to include(muted_topic.title)
+      end
+    end
+
+    describe "exclude_tag" do
+      fab!(:tag) { Fabricate(:tag, name: "excludeme") }
+      fab!(:tagged_topic) { Fabricate(:topic, tags: [tag]) }
+      fab!(:untagged_topic, :topic)
+
+      before do
+        Fabricate(:post, topic: tagged_topic)
+        Fabricate(:post, topic: untagged_topic)
+      end
+
+      it "is respected in latest RSS" do
+        get "/latest.rss?exclude_tag=excludeme"
+        expect(response.status).to eq(200)
+        expect(response.body).to include(untagged_topic.title)
+        expect(response.body).not_to include(tagged_topic.title)
+      end
+
+      it "is respected in top RSS" do
+        TopTopic.create!(topic: tagged_topic, yearly_score: 1.0)
+        TopTopic.create!(topic: untagged_topic, yearly_score: 1.0)
+
+        get "/top.rss?period=yearly&exclude_tag=excludeme"
+        expect(response.status).to eq(200)
+        expect(response.body).to include(untagged_topic.title)
+        expect(response.body).not_to include(tagged_topic.title)
+      end
+
+      it "is respected in hot RSS" do
+        TopicHotScore.create!(topic: tagged_topic, score: 1.0)
+        TopicHotScore.create!(topic: untagged_topic, score: 1.0)
+
+        get "/hot.rss?exclude_tag=excludeme"
+        expect(response.status).to eq(200)
+        expect(response.body).to include(untagged_topic.title)
+        expect(response.body).not_to include(tagged_topic.title)
+      end
+
+      it "is respected in user topics RSS" do
+        sign_in(user)
+        tagged_topic.update!(user: user)
+        untagged_topic.update!(user: user)
+
+        get "/u/#{user.username}/activity/topics.rss?exclude_tag=excludeme"
+        expect(response.status).to eq(200)
+        expect(response.body).to include(untagged_topic.title)
+        expect(response.body).not_to include(tagged_topic.title)
       end
     end
   end
@@ -857,12 +1060,60 @@ RSpec.describe ListController do
           expect(response.body).to_not include("/forum/forum")
           expect(response.body).to include("http://test.localhost/forum/c/#{category.slug}")
         end
+
+        it "respects exclude_tag query param" do
+          tag = Fabricate(:tag, name: "excludeme")
+          tagged_topic = Fabricate(:topic, category: category, tags: [tag])
+          Fabricate(:post, topic: tagged_topic)
+          untagged_topic = Fabricate(:topic, category: category)
+          Fabricate(:post, topic: untagged_topic)
+
+          get "/c/#{category.slug}/#{category.id}.rss?exclude_tag=excludeme"
+          expect(response.status).to eq(200)
+          expect(response.body).to include(untagged_topic.title)
+          expect(response.body).not_to include(tagged_topic.title)
+        end
+
+        it "does not advertise the route-derived category param in the self URL" do
+          get "/c/#{category.slug}/#{category.id}.rss?exclude_tag=excludeme"
+          expect(response.status).to eq(200)
+
+          doc = Nokogiri::XML::Document.parse(response.body)
+          atom_link =
+            URI.parse(
+              doc.at_xpath("/rss/channel/atom:link", { "atom" => "http://www.w3.org/2005/Atom" })[
+                "href"
+              ],
+            )
+          link = URI.parse(doc.at_xpath("/rss/channel/link").text)
+
+          expect(atom_link.path).to eq("/c/#{category.slug}/#{category.id}.rss")
+          expect(Rack::Utils.parse_nested_query(atom_link.query.to_s)).to eq(
+            "exclude_tag" => "excludeme",
+          )
+          expect(link.path).to eq("/c/#{category.slug}/#{category.id}")
+          expect(Rack::Utils.parse_nested_query(link.query.to_s)).to eq(
+            "exclude_tag" => "excludeme",
+          )
+        end
       end
 
       describe "category default views" do
         it "has a top default view" do
           category.update!(default_view: "top", default_top_period: "monthly")
           get "/c/#{category.slug}/#{category.id}.json"
+          expect(response.status).to eq(200)
+          json = response.parsed_body
+          expect(json["topic_list"]["for_period"]).to eq("monthly")
+        end
+
+        it "falls back to the site default period when default_top_period is an unsupported value" do
+          SiteSetting.top_page_default_timeframe = "monthly"
+          category.update!(default_view: "top")
+          category.update_column(:default_top_period, "user~'^d'AND all")
+
+          get "/c/#{category.slug}/#{category.id}.json"
+
           expect(response.status).to eq(200)
           json = response.parsed_body
           expect(json["topic_list"]["for_period"]).to eq("monthly")
@@ -914,6 +1165,49 @@ RSpec.describe ListController do
           get "/c/#{amazing_category.slug}/#{amazing_category.id}"
 
           expect(response.body).to have_tag "title", text: "Amazing Category - Discourse"
+        end
+
+        it "renders og:description and twitter:description without HTML tags" do
+          amazing_category.update!(
+            description: "This is <strong>bold</strong> and <em>italic</em> text",
+          )
+          get "/c/#{amazing_category.slug}/#{amazing_category.id}"
+
+          expect(response.body).to have_tag(
+            :meta,
+            with: {
+              property: "og:description",
+              content: "This is bold and italic text",
+            },
+          )
+          expect(response.body).to have_tag(
+            :meta,
+            with: {
+              name: "twitter:description",
+              content: "This is bold and italic text",
+            },
+          )
+        end
+
+        it "escapes the description exactly once instead of double-escaping entities" do
+          amazing_category.update!(description: "<p>Tom &amp; Jerry&rsquo;s adventures</p>")
+
+          get "/c/#{amazing_category.slug}/#{amazing_category.id}"
+
+          expect(response.body).to have_tag(
+            :meta,
+            with: {
+              name: "description",
+              content: "Tom & Jerry’s adventures",
+            },
+          )
+          expect(response.body).to have_tag(
+            :meta,
+            with: {
+              property: "og:description",
+              content: "Tom & Jerry’s adventures",
+            },
+          )
         end
       end
 
@@ -1359,6 +1653,7 @@ RSpec.describe ListController do
     fab!(:private_category) { Fabricate(:private_category, group:, slug: "private-category-slug") }
     fab!(:private_message_topic)
     fab!(:topic_in_private_category) { Fabricate(:topic, category: private_category) }
+    fab!(:user2, :user)
 
     it "should not return topics that the user is not allowed to view" do
       sign_in(user)
@@ -1440,6 +1735,30 @@ RSpec.describe ListController do
 
         expect(parsed["topic_list"]["topics"].length).to eq(1)
         expect(parsed["topic_list"]["topics"].first["id"]).to eq(topic_with_tag.id)
+      end
+    end
+
+    it "keeps query params encoded in more_topics_url when unicode usernames are enabled" do
+      SiteSetting.unicode_usernames = true
+
+      topic_1 = Fabricate(:topic)
+      Fabricate(:post, topic: topic_1, user: user)
+      Fabricate(:post, topic: topic_1, user: user2)
+
+      topic_2 = Fabricate(:topic)
+      Fabricate(:post, topic: topic_2, user: user)
+      Fabricate(:post, topic: topic_2, user: user2)
+
+      stub_const(TopicQuery, "DEFAULT_PER_PAGE_COUNT", 1) do
+        sign_in(user)
+
+        get "/filter.json", params: { q: "users:#{user.username}+#{user2.username}" }
+
+        expect(response.status).to eq(200)
+
+        expect(response.parsed_body["topic_list"]["more_topics_url"]).to eq(
+          "/filter?no_definitions=true&page=1&q=users%3A#{user.username}%2B#{user2.username}",
+        )
       end
     end
 
@@ -1687,7 +2006,7 @@ RSpec.describe ListController do
       response.parsed_body["topic_list"]["topics"].map { |topics| topics["id"] }
     end
 
-    context "when the user is part of the `experimental_new_new_view_groups` site setting group" do
+    context "when unified new is enabled for the user" do
       fab!(:category)
       fab!(:tag)
 
@@ -1712,8 +2031,7 @@ RSpec.describe ListController do
       before do
         TopicUser.update_last_read(user, topic.id, 1, 1, 1)
 
-        SiteSetting.experimental_new_new_view_groups = group.name
-        group.add(user)
+        SiteSetting.enable_unified_new = true
 
         sign_in(user)
       end
@@ -1859,6 +2177,7 @@ RSpec.describe ListController do
       end
 
       before do
+        SiteSetting.set_locale_from_param = true
         topic.update!(locale: "en")
         topic.category.update!(locale: "en")
       end

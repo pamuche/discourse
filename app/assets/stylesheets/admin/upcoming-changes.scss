@@ -21,18 +21,21 @@
     width: 35%;
   }
 
+  &__dependents,
+  &__related {
+    margin-top: var(--space-2);
+  }
+
+  &__depends-on-notice {
+    font-size: var(--font-down-1);
+    color: var(--danger);
+    margin-top: var(--space-2);
+  }
+
   &__opt-in-groups-label {
     display: block;
     font-size: var(--font-down-1);
     color: var(--primary-medium);
-  }
-
-  &__badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    align-items: center;
-    min-height: var(--space-8);
   }
 
   &__image-preview.lightbox[href] {
@@ -49,23 +52,19 @@
   }
 
   &__badge {
-    font-size: var(--font-down-2);
-    padding: 0.15rem 0.3rem;
-    border-radius: 4px;
-    color: var(--primary-very-high);
-    background: var(--tertiary-low);
-    letter-spacing: 0.25px;
-    align-items: center;
-    display: inline-flex;
-    gap: var(--space-1);
+    &:focus-visible,
+    &:hover {
+      .upcoming-change__badge-info {
+        background: var(--tertiary);
 
-    svg {
-      height: 0.75em;
-      color: var(--primary-high);
+        .d-icon {
+          color: var(--secondary);
+        }
+      }
     }
 
-    &.--status-permanent {
-      background-color: var(--success-low);
+    &.--has-tooltip {
+      cursor: pointer;
     }
   }
 
@@ -79,7 +78,7 @@
   }
 
   &__description-details {
-    display: inline;
+    display: inline-block;
   }
 
   &__save-groups {
@@ -116,9 +115,9 @@
     padding: var(--space-2) 0;
   }
 
-  &__permanent-notice {
+  &__status-notice {
     font-size: var(--font-down-1);
-    color: var(--primary-medium);
+    color: var(--danger);
     margin-top: var(--space-2);
   }
 }

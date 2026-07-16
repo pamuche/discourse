@@ -1,5 +1,5 @@
-import { htmlSafe } from "@ember/template";
-import discourseComputed from "discourse/lib/decorators";
+import { computed } from "@ember/object";
+import { trustHTML } from "@ember/template";
 import AdComponent from "./ad-component";
 
 export default class CarbonadsAd extends AdComponent {
@@ -12,15 +12,15 @@ export default class CarbonadsAd extends AdComponent {
     super.init();
   }
 
-  @discourseComputed("serve_id", "placement")
-  url(serveId, placement) {
-    return htmlSafe(
-      `//cdn.carbonads.com/carbon.js?serve=${serveId}&placement=${placement}`
+  @computed("serve_id", "placement")
+  get url() {
+    return trustHTML(
+      `//cdn.carbonads.com/carbon.js?serve=${this.serve_id}&placement=${this.placement}`
     );
   }
 
-  @discourseComputed
-  showCarbonAds() {
+  @computed
+  get showCarbonAds() {
     if (!this.currentUser) {
       return true;
     }
@@ -28,16 +28,20 @@ export default class CarbonadsAd extends AdComponent {
     return this.currentUser.show_carbon_ads;
   }
 
-  @discourseComputed(
+  @computed(
     "placement",
     "serve_id",
     "showCarbonAds",
     "showToGroups",
     "showOnCurrentPage"
   )
-  showAd(placement, serveId, showCarbonAds, showToGroups, showOnCurrentPage) {
+  get showAd() {
     return (
-      placement && serveId && showCarbonAds && showToGroups && showOnCurrentPage
+      this.placement &&
+      this.serve_id &&
+      this.showCarbonAds &&
+      this.showToGroups &&
+      this.showOnCurrentPage
     );
   }
 
@@ -53,7 +57,7 @@ export default class CarbonadsAd extends AdComponent {
 
   <template>
     {{#if this.showAd}}
-      {{! template-lint-disable no-forbidden-elements }}
+      {{! eslint-disable ember/template-no-forbidden-elements }}
       <script src={{this.url}} id="_carbonads_js" async type="text/javascript">
       </script>
     {{/if}}

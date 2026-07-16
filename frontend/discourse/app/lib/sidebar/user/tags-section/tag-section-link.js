@@ -16,12 +16,12 @@ export default class TagSectionLink extends BaseTagSectionLink {
   @bind
   refreshCounts() {
     this.totalUnread = this.topicTrackingState.countUnread({
-      tagId: this.tagName,
+      tagId: this.tag.id,
     });
 
-    if (this.totalUnread === 0 || this.#newNewViewEnabled) {
+    if (this.totalUnread === 0 || this.#unifiedNewEnabled) {
       this.totalNew = this.topicTrackingState.countNew({
-        tagId: this.tagName,
+        tagId: this.tag.id,
       });
     }
   }
@@ -31,12 +31,12 @@ export default class TagSectionLink extends BaseTagSectionLink {
   }
 
   get models() {
-    return [this.tagName];
+    return [this.tag.slug, this.tag.id];
   }
 
   get route() {
     if (this.currentUser?.sidebarLinkToFilteredList) {
-      if (this.#newNewViewEnabled && this.#unreadAndNewCount > 0) {
+      if (this.#unifiedNewEnabled && this.#unreadAndNewCount > 0) {
         return "tag.showNew";
       } else if (this.totalUnread > 0) {
         return "tag.showUnread";
@@ -56,7 +56,7 @@ export default class TagSectionLink extends BaseTagSectionLink {
       return;
     }
 
-    if (this.#newNewViewEnabled && this.#unreadAndNewCount > 0) {
+    if (this.#unifiedNewEnabled && this.#unreadAndNewCount > 0) {
       return this.#unreadAndNewCount.toString();
     } else if (this.totalUnread > 0) {
       return i18n("sidebar.unread_count", {
@@ -87,7 +87,7 @@ export default class TagSectionLink extends BaseTagSectionLink {
     return this.totalUnread + this.totalNew;
   }
 
-  get #newNewViewEnabled() {
-    return !!this.currentUser?.new_new_view_enabled;
+  get #unifiedNewEnabled() {
+    return !!this.currentUser?.unified_new_enabled;
   }
 }

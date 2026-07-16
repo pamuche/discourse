@@ -197,6 +197,24 @@ class BulkImport::Base
     @last_imported_post_id = imported_post_ids.select { |id| id < PRIVATE_OFFSET }.max || -1
     @last_imported_private_post_id =
       imported_post_ids.select { |id| id > PRIVATE_OFFSET }.max || (PRIVATE_OFFSET - 1)
+
+    if defined?(BulkImport::Generic::MERGE_IMPORT) && BulkImport::Generic::MERGE_IMPORT
+      puts "MERGE_IMPORT mode: clearing imported ID maps to avoid cross-source collisions"
+      @groups = {}
+      @users = {}
+      @categories = {}
+      @topics = {}
+      @posts = {}
+      @uploads_mapping = {}
+      @badge_mapping = {}
+      @poll_mapping = {}
+      @poll_option_mapping = {}
+      @chat_direct_message_channel_mapping = {}
+      @chat_channel_mapping = {}
+      @chat_thread_mapping = {}
+      @chat_message_mapping = {}
+      @discourse_reaction_mapping = {}
+    end
   end
 
   def last_id(klass)
@@ -220,12 +238,22 @@ class BulkImport::Base
   def load_index(type)
     map = {}
 
-    @raw_connection.send_query(
-      "SELECT original_id, discourse_id FROM migration_mappings WHERE type = #{type}",
-    )
-    @raw_connection.set_single_row_mode
-
-    @raw_connection.get_result.stream_each { |row| map[row["original_id"]] = row["discourse_id"] }
+    if @import_prefix
+      @raw_connection.send_query(
+        "SELECT original_id, discourse_id FROM migration_mappings WHERE type = #{type} AND original_id LIKE '#{@import_prefix}:%'",
+      )
+      @raw_connection.set_single_row_mode
+      prefix_length = @import_prefix.length + 1
+      @raw_connection.get_result.stream_each do |row|
+        map[row["original_id"][prefix_length..]] = row["discourse_id"]
+      end
+    else
+      @raw_connection.send_query(
+        "SELECT original_id, discourse_id FROM migration_mappings WHERE type = #{type} AND original_id NOT LIKE '%:%'",
+      )
+      @raw_connection.set_single_row_mode
+      @raw_connection.get_result.stream_each { |row| map[row["original_id"]] = row["discourse_id"] }
+    end
 
     @raw_connection.get_result
 
@@ -286,6 +314,9 @@ class BulkImport::Base
 
     puts "Loading post actions indexes..."
     @last_post_action_id = last_id(PostAction)
+
+    puts "Loading bookmark indexes..."
+    @last_bookmark_id = last_id(Bookmark)
 
     puts "Loading upload indexes..."
     @uploads_mapping = load_index(MAPPING_TYPES[:upload])
@@ -369,6 +400,11 @@ class BulkImport::Base
     end
     if @last_post_action_id > 0
       @raw_connection.exec("SELECT setval('#{PostAction.sequence_name}', #{@last_post_action_id})")
+    end
+    if @last_bookmark_id > 0
+      @raw_connection.exec(
+        "SELECT setval(pg_get_serial_sequence('bookmarks', 'id'), #{@last_bookmark_id})",
+      )
     end
     if @last_user_avatar_id > 0
       @raw_connection.exec("SELECT setval('#{UserAvatar.sequence_name}', #{@last_user_avatar_id})")
@@ -528,6 +564,9 @@ class BulkImport::Base
     trust_level
     admin
     moderator
+    approved
+    approved_at
+    approved_by_id
     date_of_birth
     ip_address
     registration_ip_address
@@ -687,6 +726,7 @@ class BulkImport::Base
     category_id
     visible
     closed
+    archived
     pinned_at
     pinned_until
     pinned_globally
@@ -751,6 +791,21 @@ class BulkImport::Base
     notifications_changed_at
     notifications_reason_id
     total_msecs_viewed
+  ]
+
+  BOOKMARK_COLUMNS = %i[
+    id
+    user_id
+    bookmarkable_id
+    bookmarkable_type
+    name
+    reminder_at
+    reminder_set_at
+    reminder_last_sent_at
+    auto_delete_preference
+    pinned
+    created_at
+    updated_at
   ]
 
   TAG_USER_COLUMNS = %i[tag_id user_id notification_level created_at updated_at]
@@ -828,7 +883,8 @@ class BulkImport::Base
 
   GAMIFICATION_SCORE_EVENT_COLUMNS = %i[user_id date points description created_at updated_at]
 
-  SOLVED_TOPIC_COLUMNS = %i[topic_id answer_post_id accepter_user_id created_at updated_at]
+  SOLVED_TOPIC_COLUMNS = %i[topic_id created_at updated_at]
+  TOPIC_ANSWER_COLUMNS = %i[solved_topic_id answer_post_id accepter_user_id created_at updated_at]
 
   POST_EVENT_COLUMNS = %i[
     id
@@ -1098,6 +1154,10 @@ class BulkImport::Base
     create_records(rows, "topic_user", TOPIC_USER_COLUMNS, &block)
   end
 
+  def create_bookmarks(rows, &block)
+    create_records(rows, "bookmark", BOOKMARK_COLUMNS, &block)
+  end
+
   def create_tag_users(rows, &block)
     create_records(rows, "tag_user", TAG_USER_COLUMNS, &block)
   end
@@ -1148,6 +1208,10 @@ class BulkImport::Base
 
   def create_solved_topic(rows, &block)
     create_records(rows, "discourse_solved_solved_topics", SOLVED_TOPIC_COLUMNS, &block)
+  end
+
+  def create_topic_answers(rows, &block)
+    create_records(rows, "discourse_solved_topic_answers", TOPIC_ANSWER_COLUMNS, &block)
   end
 
   def create_post_events(rows, &block)
@@ -1302,6 +1366,8 @@ class BulkImport::Base
     end
 
     @users[user[:imported_id].to_i] = user[:id] = @last_user_id += 1
+    @emails[user[:email]] = user[:id] if user[:email].present?
+    @external_ids[user[:external_id]] = user[:id] if user[:external_id].present?
 
     imported_username = user[:original_username].presence || user[:username].dup
 
@@ -1327,6 +1393,12 @@ class BulkImport::Base
     user[:last_emailed_at] ||= NOW
     user[:created_at] ||= NOW
     user[:updated_at] ||= user[:created_at]
+
+    user[:approved] = true if user[:approved].nil?
+    if user[:approved]
+      user[:approved_at] ||= user[:created_at]
+      user[:approved_by_id] ||= Discourse::SYSTEM_USER_ID
+    end
     user[:suspended_at] ||= user[:suspended_at]
     user[:suspended_till] ||= user[:suspended_till] ||
       (200.years.from_now if user[:suspended_at].present?)
@@ -1357,7 +1429,8 @@ class BulkImport::Base
     # unique email
     user_email[:email] = random_email until EmailAddressValidator.valid_value?(
       user_email[:email],
-    ) && !@emails.has_key?(user_email[:email])
+    ) &&
+      (!@emails.has_key?(user_email[:email]) || @emails[user_email[:email]] == user_email[:user_id])
 
     user_email
   end
@@ -1475,9 +1548,11 @@ class BulkImport::Base
         existing_category_id = existing_category_id.to_i
       end
 
-      @categories[category[:imported_id].to_i] = existing_category_id
-      category[:skip] = true
-      return category
+      if existing_category_id && Category.exists?(id: existing_category_id)
+        @categories[category[:imported_id].to_i] = existing_category_id
+        category[:skip] = true
+        return category
+      end
     end
 
     category[:id] ||= @last_category_id += 1
@@ -1496,7 +1571,7 @@ class BulkImport::Base
     category[:name_lower] = name_lower
 
     slug_next_number = 1
-    original_slug = slug = (category[:slug] || Slug.for(name_lower, ""))
+    original_slug = slug = category[:slug] || Slug.for(name_lower, "")
 
     while !@category_slugs.add?(slug.downcase)
       slug = "#{original_slug}-#{slug_next_number}"
@@ -1641,6 +1716,14 @@ class BulkImport::Base
 
   def process_topic_user(topic_user)
     topic_user
+  end
+
+  def process_bookmark(bookmark)
+    bookmark[:id] ||= @last_bookmark_id += 1
+    bookmark[:auto_delete_preference] ||= 0
+    bookmark[:created_at] ||= NOW
+    bookmark[:updated_at] ||= bookmark[:created_at]
+    bookmark
   end
 
   def process_tag_user(tag_user)
@@ -1900,8 +1983,14 @@ class BulkImport::Base
   def process_discourse_solved_solved_topics(solved_topic)
     solved_topic[:created_at] ||= NOW
     solved_topic[:updated_at] ||= NOW
-    solved_topic[:accepter_user_id] ||= Discourse::SYSTEM_USER_ID
     solved_topic
+  end
+
+  def process_discourse_solved_topic_answers(topic_answer)
+    topic_answer[:created_at] ||= NOW
+    topic_answer[:updated_at] ||= NOW
+    topic_answer[:accepter_user_id] ||= Discourse::SYSTEM_USER_ID
+    topic_answer
   end
 
   def process_discourse_post_event_events(post_event)
@@ -2120,24 +2209,20 @@ class BulkImport::Base
       begin
         @raw_connection.copy_data(sql, @encoder) do
           rows.each do |row|
-            begin
-              if (mapped = yield(row))
-                processed = send(process_method_name, mapped)
-                imported_ids << mapped[:imported_id] unless mapped[:imported_id].nil?
-                imported_ids |= mapped[:imported_ids] unless mapped[:imported_ids].nil?
-                unless processed[:skip]
-                  @raw_connection.put_copy_data columns.map { |c| processed[c] }
-                end
-              end
-              rows_created += 1
-              if rows_created % 100 == 0
-                print "\r%7d - %6d/sec" % [rows_created, rows_created.to_f / (Time.now - start)]
-              end
-            rescue => e
-              puts "\n"
-              puts "ERROR: #{e.message}"
-              puts e.backtrace.join("\n")
+            if (mapped = yield(row))
+              processed = send(process_method_name, mapped)
+              imported_ids << mapped[:imported_id] unless mapped[:imported_id].nil?
+              imported_ids |= mapped[:imported_ids] unless mapped[:imported_ids].nil?
+              @raw_connection.put_copy_data columns.map { |c| processed[c] } unless processed[:skip]
             end
+            rows_created += 1
+            if rows_created % 100 == 0
+              print "\r%7d - %6d/sec" % [rows_created, rows_created.to_f / (Time.now - start)]
+            end
+          rescue => e
+            puts "\n"
+            puts "ERROR: #{e.message}"
+            puts e.backtrace.join("\n")
           end
         end
       rescue => e
@@ -2153,7 +2238,8 @@ class BulkImport::Base
     id_mapping_method_name = "#{name}_id_from_imported_id"
     return true unless respond_to?(id_mapping_method_name)
     create_custom_fields(name, "id", imported_ids) do |imported_id|
-      { record_id: send(id_mapping_method_name, imported_id), value: imported_id }
+      value = @import_prefix ? "#{@import_prefix}:#{imported_id}" : imported_id
+      { record_id: send(id_mapping_method_name, imported_id), value: value }
     end
     true
   rescue => e
@@ -2188,7 +2274,8 @@ class BulkImport::Base
     sql = "COPY migration_mappings (original_id, type, discourse_id) FROM STDIN"
     @raw_connection.copy_data(sql, @encoder) do
       rows.each do |original_id, discourse_id|
-        @raw_connection.put_copy_data [original_id, type, discourse_id]
+        prefixed_id = @import_prefix ? "#{@import_prefix}:#{original_id}" : original_id
+        @raw_connection.put_copy_data [prefixed_id, type, discourse_id]
       end
     end
   end
@@ -2211,8 +2298,7 @@ class BulkImport::Base
     name.gsub!(/[^A-Za-z0-9]+$/, "")
     name.gsub!(/([-_.]{2,})/) { $1.first }
     name.strip!
-    name.truncate(60)
-    name
+    name.truncate(60, omission: "")
   end
 
   def random_username
@@ -2327,7 +2413,14 @@ class BulkImport::Base
 
   def normalize_text(text)
     return nil if text.blank?
-    @html_entities.decode(normalize_charset(text.presence || "").scrub)
+    text = normalize_charset(text.presence || "").scrub
+    # Escape HTML-encoded UTF-16 surrogates (e.g. &#56256;) so they pass through
+    # as literal text instead of crashing the HTML entity decoder.
+    text.gsub!(/&#(x?)(\h+);/) do
+      cp = $1.empty? ? $2.to_i : $2.to_i(16)
+      (0xD800..0xDFFF).cover?(cp) ? "&amp;##{$1}#{$2};" : $&
+    end
+    @html_entities.decode(text)
   end
 
   def normalize_charset(text)

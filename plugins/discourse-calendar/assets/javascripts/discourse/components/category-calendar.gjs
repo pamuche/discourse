@@ -3,17 +3,48 @@ import { action } from "@ember/object";
 import { service } from "@ember/service";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { bind } from "discourse/lib/decorators";
-import getURL from "discourse/lib/get-url";
 import Category from "discourse/models/category";
-import { formatEventName } from "../helpers/format-event-name";
-import { isNotFullDayEvent } from "../lib/guess-best-date-format";
+import formatEventForCalendar from "../lib/format-event-for-calendar";
+import openEventComposer from "../lib/open-event-composer";
 import FullCalendar from "./full-calendar";
 
 export default class CategoryCalendar extends Component {
+  @service composer;
   @service currentUser;
   @service router;
   @service siteSettings;
-  @service discoursePostEventApi;
+  @service discoursePostEventService;
+
+  get canCreateEvent() {
+    if (!this.currentUser) {
+      return false;
+    }
+
+    return (
+      this.currentUser.can_create_discourse_post_event &&
+      this.currentUser.can_create_topic &&
+      this.category?.canCreateTopic
+    );
+  }
+
+  @action
+  async onDateClick(info) {
+    await openEventComposer({
+      composer: this.composer,
+      currentUser: this.currentUser,
+      siteSettings: this.siteSettings,
+      info,
+      category: this.category,
+    });
+  }
+
+  get includeSubcategories() {
+    return !this.router.currentRoute?.attributes?.noSubcategories;
+  }
+
+  get refreshKey() {
+    return `${this.category.id}-${this.includeSubcategories}`;
+  }
 
   @bind
   async loadEvents(info) {
@@ -21,20 +52,19 @@ export default class CategoryCalendar extends Component {
       const params = {
         after: info.startStr,
         before: info.endStr,
-        post_id: this.categorySetting?.postId,
+        include_ongoing: true,
         category_id: this.category.id,
-        include_subcategories: true,
       };
 
-      const events = await this.discoursePostEventApi.events(params);
+      if (this.includeSubcategories) {
+        params.include_subcategories = true;
+      }
+
+      const events = await this.discoursePostEventService.fetchEvents(params);
       return this.formattedEvents(events);
     } catch (error) {
       popupAjaxError(error);
     }
-  }
-
-  get tagsColorsMap() {
-    return JSON.parse(this.siteSettings.map_events_to_color);
   }
 
   get shouldRender() {
@@ -111,47 +141,25 @@ export default class CategoryCalendar extends Component {
 
   @action
   formattedEvents(events = []) {
-    return events.map((event) => {
-      const { startsAt, endsAt, post, categoryId } = event;
-
-      let backgroundColor;
-
-      if (post.topic.tags) {
-        const tagColorEntry = this.tagsColorsMap.find(
-          (entry) =>
-            entry.type === "tag" && post.topic.tags.includes(entry.slug)
-        );
-        backgroundColor = tagColorEntry ? tagColorEntry.color : null;
-      }
-
-      if (!backgroundColor) {
-        const categoryColorFromMap = this.tagsColorsMap.find(
-          (entry) =>
-            entry.type === "category" && entry.slug === post.category_slug
-        )?.color;
-        backgroundColor =
-          categoryColorFromMap || `#${Category.findById(categoryId)?.color}`;
-      }
-
-      return {
-        title: formatEventName(event, this.currentUser?.user_option?.timezone),
-        start: startsAt,
-        end: endsAt || startsAt,
-        allDay: !isNotFullDayEvent(moment(startsAt), moment(endsAt)),
-        url: getURL(`/t/-/${post.topic.id}/${post.post_number}`),
-        backgroundColor,
-      };
-    });
+    const timezone = this.currentUser?.user_option?.timezone;
+    return events.map((event) =>
+      formatEventForCalendar(
+        event,
+        this.siteSettings.map_events_to_color,
+        timezone
+      )
+    );
   }
 
   <template>
     {{#if this.shouldRender}}
       <FullCalendar
         @onLoadEvents={{this.loadEvents}}
+        @onDateClick={{if this.canCreateEvent this.onDateClick}}
         @height="650px"
-        @initialView={{this.categorySetting?.defaultView}}
+        @initialView={{this.categorySetting.defaultView}}
         @weekends={{this.renderWeekends}}
-        @refreshKey={{this.category.id}}
+        @refreshKey={{this.refreshKey}}
       />
     {{/if}}
   </template>

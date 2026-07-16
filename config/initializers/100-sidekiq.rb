@@ -39,17 +39,6 @@ if Sidekiq.server?
     # defer queue should simply run in sidekiq
     Scheduler::Defer.async = false
 
-    # warm up AR
-    RailsMultisite::ConnectionManagement.safe_each_connection do
-      (ActiveRecord::Base.connection.tables - %w[schema_migrations versions]).each do |table|
-        begin
-          table.classify.constantize.first
-        rescue StandardError
-          nil
-        end
-      end
-    end
-
     scheduler_hostname = ENV["UNICORN_SCHEDULER_HOSTNAME"]
 
     if !scheduler_hostname || scheduler_hostname.split(",").include?(Discourse.os_hostname)
@@ -89,7 +78,9 @@ Sidekiq.strict_args!
 
 Rails.application.config.to_prepare do
   # Ensure that scheduled jobs are loaded before mini_scheduler is configured.
-  Dir.glob("#{Rails.root}/app/jobs/scheduled/*.rb") { |f| require(f) } if Rails.env.development?
+  if Rails.env.development?
+    Dir.glob("#{Rails.root.join("app/jobs/scheduled/*.rb")}") { |f| require(f) }
+  end
 
   MiniScheduler.configure do |config|
     config.redis = DiscourseRedis.new(Discourse.sidekiq_redis_config)

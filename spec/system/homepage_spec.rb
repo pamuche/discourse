@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-describe "Homepage", type: :system do
+describe "Homepage" do
   fab!(:admin)
   fab!(:user)
   fab!(:topics) { Fabricate.times(5, :post).map(&:topic) }
@@ -40,7 +40,7 @@ describe "Homepage", type: :system do
   end
 
   it "defaults to first top_menu item as anonymous homepage" do
-    SiteSetting.top_menu = "categories|latest|new|unread"
+    SiteSetting.top_menu = "categories|latest|new"
     visit "/"
 
     expect(page).to have_css(".navigation-container .categories.active", text: "Categories")

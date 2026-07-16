@@ -3,6 +3,7 @@
 @import "base-common";
 @import "chat-drawer-routes";
 @import "chat-browse";
+@import "chat-sidebar";
 @import "chat-channel";
 @import "chat-channel-card";
 @import "chat-channel-icon";
@@ -54,7 +55,6 @@
 @import "chat-user-avatar";
 @import "chat-modal-new-message";
 @import "chat-modal-archive-channel";
-@import "chat-modal-edit-channel-name";
 @import "chat-modal-edit-channel-description";
 @import "chat-modal-create-channel";
 @import "chat-modal-channel-summary";
@@ -73,3 +73,5 @@
 @import "chat-message-search-entry";
 @import "chat-channel-filter-bar";
 @import "chat-search";
+@import "edit-category-chat";
+@import "chat-pinned-messages";

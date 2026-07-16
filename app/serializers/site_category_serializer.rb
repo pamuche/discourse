@@ -5,7 +5,8 @@ class SiteCategorySerializer < BasicCategorySerializer
              :allowed_tag_groups,
              :allow_global_tags,
              :read_only_banner,
-             :form_template_ids
+             :form_template_ids,
+             :category_types
 
   has_many :category_required_tag_groups, key: :required_tag_groups, embed: :objects
 
@@ -13,12 +14,17 @@ class SiteCategorySerializer < BasicCategorySerializer
     object.form_template_ids.sort
   end
 
+  def category_types
+    return {} if !SiteSetting.enable_simplified_category_creation
+    object.category_types
+  end
+
   def include_allowed_tags?
     SiteSetting.tagging_enabled
   end
 
   def allowed_tags
-    object.tags.pluck(:name)
+    object.tags.pluck(:id, :name, :slug).map { |id, name, slug| { id: id, name: name, slug: slug } }
   end
 
   def include_allowed_tag_groups?
@@ -40,24 +46,35 @@ class SiteCategorySerializer < BasicCategorySerializer
   def name
     return I18n.t("uncategorized_category_name") if object.uncategorized?
 
-    translated_name =
-      if (ContentLocalization.show_translated_category?(object, scope))
-        object.get_localization&.name
-      else
-        object.name
-      end
-
-    translated_name || object.name
+    localization&.name.presence || object.name
   end
 
   def description
-    translated_description =
-      if (ContentLocalization.show_translated_category?(object, scope))
-        object.get_localization&.description
-      else
-        object.description
-      end
+    localized_description || object.description
+  end
 
-    translated_description || object.description
+  def description_text
+    return super if object.uncategorized?
+    return localization.description_text if localized_description
+    object.description_text
+  end
+
+  def description_excerpt
+    return super if object.uncategorized?
+    return localization.description_excerpt if localized_description
+    object.description_excerpt
+  end
+
+  private
+
+  def localization
+    return @localization if defined?(@localization)
+    @localization =
+      (object.get_localization if ContentLocalization.show_translated_category?(object, scope))
+  end
+
+  def localized_description
+    return @localized_description if defined?(@localized_description)
+    @localized_description = localization&.description_first_paragraph.presence
   end
 end

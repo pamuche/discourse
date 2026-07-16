@@ -12,14 +12,20 @@ bs_BA:
           always: "Uvijek"
           never: "Nikad"
     chat:
+      edit_category:
+        description: "Opis"
+        actions: "Akcije"
+        settings: "Postavke"
       deleted_chat_username: obrisano
       dates:
         yesterday: "Yesterday"
       create: "napravi"
       cancel: "Odustani"
+      pinned: "Zakačena"
       channel_settings:
         edit: "Edit"
         add: "Add"
+        notification_settings_context: "Obavijest"
         join: "Učlani se"
         leave: "Napusti"
       close: "Zatvori"
@@ -73,6 +79,7 @@ bs_BA:
         title: Nova poruka
         prefix: "Za:"
       create_channel:
+        description: "Opis"
         type: "Tip"
         types:
           category: "Kategorija"
@@ -155,3 +162,8 @@ bs_BA:
           fields:
             message:
               label: Privatna Poruka
+    discourse_workflows:
+      send_chat_message:
+        message: "Privatna Poruka"
+      chat_approval:
+        message: "Privatna Poruka"

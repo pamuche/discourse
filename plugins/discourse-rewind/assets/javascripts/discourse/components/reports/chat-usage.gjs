@@ -1,10 +1,10 @@
 import Component from "@glimmer/component";
 import { concat } from "@ember/helper";
-import { htmlSafe } from "@ember/template";
-import avatar from "discourse/helpers/avatar";
-import number from "discourse/helpers/number";
+import { trustHTML } from "@ember/template";
 import getURL from "discourse/lib/get-url";
-import { i18n } from "discourse-i18n";
+import dAvatar from "discourse/ui-kit/helpers/d-avatar";
+import dNumber from "discourse/ui-kit/helpers/d-number";
+import I18n, { i18n } from "discourse-i18n";
 import { i18nForOwner } from "discourse/plugins/discourse-rewind/discourse/lib/rewind-i18n";
 
 const BotMessage = <template>
@@ -15,7 +15,7 @@ const BotMessage = <template>
     </div>
     {{#if @message}}
       <div class="chat-message__text">
-        {{htmlSafe @message}}
+        {{trustHTML @message}}
       </div>
     {{/if}}
     {{yield}}
@@ -35,7 +35,7 @@ const UserMessage = <template>
     {{yield}}
   </div>
   <div class="chat-message__avatar">
-    {{avatar @user imageSize="small"}}
+    {{dAvatar @user imageSize="small"}}
   </div>
 </template>;
 
@@ -61,56 +61,35 @@ export default class ChatUsage extends Component {
   }
 
   get message1Text() {
-    return i18nForOwner(
-      "discourse_rewind.reports.chat_usage.message_1",
-      this.args.isOwnRewind,
-      {
-        count: this.args.report.data.total_messages,
-        username: this.args.user?.username,
-      }
-    );
+    return i18n("discourse_rewind.reports.chat_usage.message_1", {
+      count: this.args.report.data.total_messages,
+    });
   }
 
   get message2Text() {
-    return i18nForOwner(
-      "discourse_rewind.reports.chat_usage.message_2",
-      this.args.isOwnRewind,
+    return I18n.messageFormat(
+      "discourse_rewind.reports.chat_usage.message_2_MF",
       {
         dm_count: this.args.report.data.dm_message_count,
         channel_count: this.args.report.data.unique_dm_channels,
-        username: this.args.user?.username,
       }
     );
   }
 
   get message3Text() {
-    return i18nForOwner(
-      "discourse_rewind.reports.chat_usage.message_3",
-      this.args.isOwnRewind,
-      {
-        count: this.args.report.data.total_reactions_received,
-        username: this.args.user?.username,
-      }
-    );
+    return i18n("discourse_rewind.reports.chat_usage.message_3", {
+      count: this.args.report.data.total_reactions_received,
+    });
   }
 
   get message4Text() {
-    return i18nForOwner(
-      "discourse_rewind.reports.chat_usage.message_4",
-      this.args.isOwnRewind,
-      {
-        length: this.args.report.data.avg_message_length,
-        username: this.args.user?.username,
-      }
-    );
+    return i18n("discourse_rewind.reports.chat_usage.message_4", {
+      length: this.args.report.data.avg_message_length,
+    });
   }
 
   get message5Text() {
-    return i18nForOwner(
-      "discourse_rewind.reports.chat_usage.message_5",
-      this.args.isOwnRewind,
-      { username: this.args.user?.username }
-    );
+    return i18n("discourse_rewind.reports.chat_usage.message_5");
   }
 
   <template>
@@ -132,7 +111,7 @@ export default class ChatUsage extends Component {
 
           <div class="chat-window__messages">
             <div class="chat-message --left">
-              <BotMessage @message={{htmlSafe this.message1Text}} />
+              <BotMessage @message={{trustHTML this.message1Text}} />
             </div>
 
             <div class="chat-message --right">
@@ -144,7 +123,7 @@ export default class ChatUsage extends Component {
             </div>
 
             <div class="chat-message --left">
-              <BotMessage @message={{htmlSafe this.message2Text}} />
+              <BotMessage @message={{trustHTML this.message2Text}} />
             </div>
 
             <div class="chat-message --right">
@@ -156,7 +135,7 @@ export default class ChatUsage extends Component {
             </div>
 
             <div class="chat-message --left">
-              <BotMessage @message={{htmlSafe this.message3Text}} />
+              <BotMessage @message={{trustHTML this.message3Text}} />
             </div>
 
             <div class="chat-message --right">
@@ -168,7 +147,7 @@ export default class ChatUsage extends Component {
             </div>
 
             <div class="chat-message --left">
-              <BotMessage @message={{htmlSafe this.message4Text}} />
+              <BotMessage @message={{trustHTML this.message4Text}} />
             </div>
 
             {{#if this.favoriteChannels.length}}
@@ -184,7 +163,7 @@ export default class ChatUsage extends Component {
                           class="chat-channel-link__name"
                         >#{{channel.channel_slug}}</span>
                         <span class="chat-channel-link__count">
-                          {{number channel.message_count}}
+                          {{dNumber channel.message_count}}
                         </span>
                       </a>
                     {{/each}}

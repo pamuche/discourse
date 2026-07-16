@@ -164,7 +164,7 @@
     font-size: var(--font-down-1);
   }
 
-  div.discourse-tags {
+  .discourse-tags {
     font-size: var(--font-down-1);
   }
 
@@ -198,9 +198,7 @@
   }
 
   ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+    @include unstyled-list;
   }
 
   .panel-body {
@@ -661,7 +659,7 @@
         overflow: hidden; // clears the text from wrapping below icons
         overflow-wrap: break-word;
 
-        @include line-clamp(2);
+        @include line-clamp(3);
       }
     }
 
@@ -756,7 +754,7 @@
       .item-description {
         color: var(--primary);
 
-        @include line-clamp(2);
+        @include line-clamp(3);
       }
 
       .icon-avatar {

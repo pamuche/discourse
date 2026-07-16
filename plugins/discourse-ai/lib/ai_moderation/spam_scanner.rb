@@ -13,8 +13,13 @@ module DiscourseAi
       def self.new_post(post)
         return if !enabled?
         return if !should_scan_post?(post)
+        return if approved_from_review_queue?(post)
 
         flag_post_for_scanning(post)
+      end
+
+      def self.approved_from_review_queue?(post)
+        ReviewableQueuedPost.approved.exists?(target: post)
       end
 
       def self.ensure_flagging_user!
@@ -66,14 +71,18 @@ module DiscourseAi
         return if !post.custom_fields[SHOULD_SCAN_POST_CUSTOM_FIELD]
         return if post.updated_at < MAX_AGE_TO_SCAN.ago
 
+        editor = post.last_editor
+        return if editor && (editor.staff? || editor.bot?)
+
+        scan_args = { post_id: post.id, triggering_user_id: post.last_editor_id || post.user_id }
         last_scan = AiSpamLog.where(post_id: post.id).order(created_at: :desc).first
 
         if last_scan && last_scan.created_at > EDIT_DELAY_MINUTES.minutes.ago
           delay_minutes =
             ((last_scan.created_at + EDIT_DELAY_MINUTES.minutes) - Time.current).to_i / 60
-          Jobs.enqueue_in(delay_minutes.minutes, :ai_spam_scan, post_id: post.id)
+          Jobs.enqueue_in(delay_minutes.minutes, :ai_spam_scan, scan_args)
         else
-          Jobs.enqueue(:ai_spam_scan, post_id: post.id)
+          Jobs.enqueue(:ai_spam_scan, scan_args)
         end
       end
 
@@ -177,8 +186,8 @@ module DiscourseAi
           end
 
         used_llm = bot.model
-        spam_persona = bot.persona
-        used_prompt = spam_persona.craft_prompt(ctx, llm: used_llm).system_message_text
+        spam_agent = bot.agent
+        used_prompt = spam_agent.craft_prompt(ctx, llm: used_llm).system_message_text
 
         text_content =
           if target_msg[:content].is_a?(Array)
@@ -201,16 +210,19 @@ module DiscourseAi
         }
       end
 
-      def self.perform_scan(post)
+      def self.perform_scan(post, triggering_user_id: nil)
         return if !should_scan_post?(post)
 
-        perform_scan!(post)
+        perform_scan!(post, triggering_user_id: triggering_user_id)
       end
 
-      def self.perform_scan!(post)
+      def self.perform_scan!(post, triggering_user_id: nil)
         return if !enabled?
         settings = AiModerationSetting.spam
-        return if !settings || !settings.llm_model || !settings.ai_persona
+        return if !settings || !settings.llm_model
+
+        agent = settings.ai_agent
+        return if !agent
 
         target_msg = build_target_content_msg(post)
         custom_instructions = settings.custom_instructions.presence
@@ -223,9 +235,9 @@ module DiscourseAi
           build_bot_context(
             messages: [target_msg],
             custom_instructions: custom_instructions,
-            user: self.flagging_user,
+            user: flagging_user,
           )
-        bot = build_scanner_bot(settings: settings, user: self.flagging_user)
+        bot = build_scanner_bot(settings: settings, user: flagging_user)
         structured_output = nil
 
         begin
@@ -254,7 +266,7 @@ module DiscourseAi
                 payload: text_content,
                 reason: reason,
               )
-            handle_spam(post, log) if is_spam
+            handle_spam(post, log, triggering_user_id: triggering_user_id) if is_spam
           end
         rescue StandardError => e
           # we need retries otherwise stuff will not be handled
@@ -285,7 +297,7 @@ module DiscourseAi
         bypass_response_format: false,
         user: Discourse.system_user
       )
-        DiscourseAi::Personas::BotContext
+        DiscourseAi::Agents::BotContext
           .new(
             user: user,
             skip_show_thinking: true,
@@ -302,11 +314,11 @@ module DiscourseAi
         llm_id: nil,
         user: Discourse.system_user
       )
-        persona = settings.ai_persona.class_instance&.new
+        agent = settings.ai_agent.class_instance&.new
 
         llm_model = llm_id ? LlmModel.find(llm_id) : settings.llm_model
 
-        DiscourseAi::Personas::Bot.as(user, persona: persona, model: llm_model)
+        DiscourseAi::Agents::Bot.as(user, agent: agent, model: llm_model)
       end
 
       def self.is_spam?(structured_output)
@@ -398,7 +410,12 @@ module DiscourseAi
         nil
       end
 
-      def self.handle_spam(post, log)
+      def self.handle_spam(post, log, triggering_user_id: nil)
+        if post_has_existing_flag?(post)
+          log.update!(error: "skipped because post already has a flag")
+          return
+        end
+
         url = "#{Discourse.base_url}/admin/plugins/discourse-ai/ai-spam"
         reason = I18n.t("discourse_ai.spam_detection.flag_reason", url: url)
 
@@ -419,20 +436,22 @@ module DiscourseAi
         if result.success?
           log.update!(reviewable: result.reviewable)
 
-          reason = I18n.t("discourse_ai.spam_detection.silence_reason", url: url)
-          silencer =
-            UserSilencer.new(
-              post.user,
-              flagging_user,
-              message: :too_many_spam_flags,
-              post_id: post.id,
-              reason: reason,
-              keep_posts: true,
-            )
-          silencer.silence
+          if triggering_user_id.present? && triggering_user_id.to_i == post.user_id
+            reason = I18n.t("discourse_ai.spam_detection.silence_reason", url: url)
+            silencer =
+              UserSilencer.new(
+                post.user,
+                flagging_user,
+                message: :too_many_spam_flags,
+                post_id: post.id,
+                reason: reason,
+                keep_posts: true,
+              )
+            silencer.silence
 
-          # silencer will not hide tl1 posts, so we do this here
-          hide_post(post)
+            # silencer will not hide tl1 posts, so we do this here
+            hide_post(post)
+          end
         else
           log.update!(
             error:
@@ -450,6 +469,10 @@ module DiscourseAi
         )
 
         Topic.where(id: post.topic_id).update_all(visible: false) if post.post_number == 1
+      end
+
+      def self.post_has_existing_flag?(post)
+        PostAction.active.flags.where(post: post).exists?
       end
     end
   end

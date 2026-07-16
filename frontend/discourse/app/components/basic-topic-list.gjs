@@ -1,21 +1,12 @@
-/* eslint-disable ember/no-classic-components */
+/* eslint-disable ember/no-classic-components, ember/no-observers, ember/require-tagless-components */
 import Component from "@ember/component";
-import { alias, not } from "@ember/object/computed";
-import { service } from "@ember/service";
+import { computed, set } from "@ember/object";
 import { observes } from "@ember-decorators/object";
-import $ from "jquery";
-import ConditionalLoadingSpinner from "discourse/components/conditional-loading-spinner";
 import List from "discourse/components/topic-list/list";
-import discourseComputed from "discourse/lib/decorators";
+import DConditionalLoadingSpinner from "discourse/ui-kit/d-conditional-loading-spinner";
 import { i18n } from "discourse-i18n";
 
 export default class BasicTopicList extends Component {
-  @service site;
-
-  @alias("topicList.loadingMore") loadingMore;
-
-  @not("loaded") loading;
-
   init() {
     super.init(...arguments);
     const topicList = this.topicList;
@@ -24,8 +15,22 @@ export default class BasicTopicList extends Component {
     }
   }
 
-  @discourseComputed("topicList.loaded")
-  loaded() {
+  @computed("topicList.loadingMore")
+  get loadingMore() {
+    return this.topicList?.loadingMore;
+  }
+
+  set loadingMore(value) {
+    set(this, "topicList.loadingMore", value);
+  }
+
+  @computed("loaded")
+  get loading() {
+    return !this.loaded;
+  }
+
+  @computed("topicList.loaded")
+  get loaded() {
     let topicList = this.topicList;
     if (topicList) {
       return topicList.get("loaded");
@@ -46,52 +51,15 @@ export default class BasicTopicList extends Component {
     }
   }
 
-  @discourseComputed("topics")
-  showUnreadIndicator(topics) {
-    return topics.some(
+  @computed("topics")
+  get showUnreadIndicator() {
+    return this.topics.some(
       (topic) => typeof topic.unread_by_group_member !== "undefined"
     );
   }
 
-  click(e) {
-    // Mobile basic-topic-list doesn't use the `topic-list-item` view so
-    // the event for the topic entrance is never wired up.
-    if (this.site.desktopView) {
-      return;
-    }
-
-    let target = $(e.target);
-    if (target.closest(".posts-map").length) {
-      const topicId = target.closest("tr").attr("data-topic-id");
-      if (topicId) {
-        if (target.prop("tagName") !== "A") {
-          let targetLinks = target.find("a");
-          if (targetLinks.length) {
-            target = targetLinks;
-          } else {
-            targetLinks = target.closest("a");
-            if (targetLinks.length) {
-              target = targetLinks;
-            } else {
-              return false;
-            }
-          }
-        }
-
-        const topic = this.topics.find(
-          (value) => value.id === parseInt(topicId, 10)
-        );
-        this.appEvents.trigger("topic-entrance:show", {
-          topic,
-          position: target.offset(),
-        });
-      }
-      return false;
-    }
-  }
-
   <template>
-    <ConditionalLoadingSpinner @condition={{this.loading}}>
+    <DConditionalLoadingSpinner @condition={{this.loading}}>
       {{#if this.topics}}
         <List
           @showPosters={{this.showPosters}}
@@ -105,6 +73,7 @@ export default class BasicTopicList extends Component {
           @order={{this.order}}
           @ascending={{this.ascending}}
           @focusLastVisitedTopic={{this.focusLastVisitedTopic}}
+          @listContext={{this.listContext}}
         />
       {{else}}
         {{#unless this.loadingMore}}
@@ -113,6 +82,6 @@ export default class BasicTopicList extends Component {
           </div>
         {{/unless}}
       {{/if}}
-    </ConditionalLoadingSpinner>
+    </DConditionalLoadingSpinner>
   </template>
 }

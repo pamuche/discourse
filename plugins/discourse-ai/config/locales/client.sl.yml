@@ -34,11 +34,20 @@ sl:
             canned_reply:
               label: "Odgovori"
     discourse_ai:
+      ai_tool_approval:
+        loading: "Nalagam..."
+        tool: "Dejanje"
+        user: "Uporabnik"
+        approve: "Odobri"
+        reject: "Zavrni"
+        approved: "Potrjeno"
+        rejected: "Zavrnjeno"
+      llm_selector:
+        none: "Brez"
       features:
-        back: "Nazaj"
         disabled: "(onemogočeno)"
         groups: "Skupine:"
-        no_persona: "Ni nastavljeno"
+        no_agent: "Ni nastavljeno"
         no_groups: "Brez"
         edit: "Nastavitve"
         expand_list:
@@ -47,11 +56,16 @@ sl:
           few: "(%{count} več)"
           other: "(%{count} več)"
         collapse_list: "(manj)"
+        nav:
+          enabled: "Vključeno"
         filters:
           all: "Vsi"
           reset: "Ponastavi"
         search:
           name: "Išči"
+        image_caption:
+          setting_groups:
+            settings: "Nastavitve"
         spam:
           name: "Neželeno"
       modals:
@@ -59,6 +73,7 @@ sl:
       layout:
         table: "Tabela"
       translations:
+        category_scope: "Kategorije"
         stats:
           eta_minutes:
             one: "%{count} minuta"
@@ -94,8 +109,7 @@ sl:
         periods:
           last_day: "Zadnjih 24 ur"
           custom: "Po meri..."
-      ai_persona:
-        back: "Nazaj"
+      ai_agent:
         name: "Ime"
         edit: "Uredi"
         export: "Izvozi"
@@ -106,6 +120,12 @@ sl:
         enabled: "Vključeno?"
         allowed_groups: "Dovoljene skupine"
         delete: "Izbriši"
+        thinking_effort_options:
+          none: "Brez"
+          low: "Nizka"
+          medium: "Srednja"
+          high: "Visoka"
+          max: "Največ"
         response_format:
           open_modal: "Uredi"
         filters:
@@ -115,7 +135,6 @@ sl:
           title: "Prenosi"
           uploading: "Nalagam..."
       tools:
-        back: "Nazaj"
         export: "Izvozi"
         import: "Uvozi"
         name: "Ime"
@@ -124,13 +143,32 @@ sl:
         save: "Shrani"
         remove_parameter: "Odstrani"
         parameter_required: "Zahtevano"
+        credential_not_set: "(ni nastavljeno)"
         edit: "Uredi"
         delete: "Izbriši"
+      secrets:
+        short_title: "Poverilnice"
+        name: "Ime"
+        secret: "Stanje"
+        save: "Shrani"
+        edit: "Uredi"
+        delete: "Izbriši"
+        embedding: "Vdelovanje"
+      mcp_servers:
+        name: "Ime"
+        description: "Opis"
+        url: "URL"
+        oauth_connect: "Poveži"
+        enabled: "Vključeno"
+        save: "Shrani"
+        edit: "Uredi"
+        delete: "Izbriši"
+        tools_modal:
+          required: "Zahtevano"
       llms:
         display_name: "Ime"
         save: "Shrani"
         edit: "Uredi"
-        back: "Nazaj"
         delete: Izbriši
         quotas:
           group: "Skupina"
@@ -163,10 +201,7 @@ sl:
           cancel: "Prekliči"
         thumbnail_suggestions:
           try_again: "Poskusi ponovno"
-        image_caption:
-          save_caption: "Shrani"
       embeddings:
-        back: "Nazaj"
         save: "Shrani"
         delete: "Izbriši"
         edit: "Uredi"

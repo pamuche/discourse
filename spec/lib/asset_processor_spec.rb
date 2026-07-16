@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 RSpec.describe AssetProcessor do
+  def entrypoint(result, name)
+    result.values.find { |chunk| chunk["name"] == name }
+  end
+
   describe "skip_module?" do
     it "returns false for empty strings" do
       expect(AssetProcessor.skip_module?(nil)).to eq(false)
@@ -115,13 +119,17 @@ RSpec.describe AssetProcessor do
           }
         JS
 
-      result = AssetProcessor.new.rollup(sources, {})
+      result =
+        AssetProcessor.new.rollup(
+          sources,
+          { entrypoints: { main: { modules: ["discourse/initializers/hello.gjs"] } } },
+        )
 
-      code = result["code"]
+      code = entrypoint(result, "main")["code"]
       expect(code).to include('"hello world"')
       expect(code).to include("dt7948") # Decorator transform
 
-      expect(result["map"]).not_to be_nil
+      expect(entrypoint(result, "main")["map"]).not_to be_nil
     end
 
     it "supports decorators and class properties without error" do
@@ -138,8 +146,12 @@ RSpec.describe AssetProcessor do
         }
       JS
 
-      result = AssetProcessor.new.rollup({ "discourse/initializers/foo.js" => script }, {})
-      expect(result["code"]).to include("dt7948.n")
+      result =
+        AssetProcessor.new.rollup(
+          { "discourse/initializers/foo.js" => script },
+          { entrypoints: { main: { modules: ["discourse/initializers/foo.js"] } } },
+        )
+      expect(entrypoint(result, "main")["code"]).to include("dt7948.n")
     end
 
     it "supports object literal decorators without errors" do
@@ -154,8 +166,12 @@ RSpec.describe AssetProcessor do
         }
       JS
 
-      result = AssetProcessor.new.rollup({ "discourse/initializers/foo.js" => script }, {})
-      expect(result["code"]).to include("dt7948")
+      result =
+        AssetProcessor.new.rollup(
+          { "discourse/initializers/foo.js" => script },
+          { entrypoints: { main: { modules: ["discourse/initializers/foo.js"] } } },
+        )
+      expect(entrypoint(result, "main")["code"]).to include("dt7948")
     end
 
     it "can use themePrefix in a template" do
@@ -167,10 +183,59 @@ RSpec.describe AssetProcessor do
       JS
 
       result =
-        AssetProcessor.new.rollup({ "discourse/initializers/foo.gjs" => script }, { themeId: 22 })
-      expect(result["code"]).to include(
+        AssetProcessor.new.rollup(
+          { "discourse/initializers/foo.gjs" => script },
+          { themeId: 22, entrypoints: { main: { modules: ["discourse/initializers/foo.gjs"] } } },
+        )
+      expect(entrypoint(result, "main")["code"]).to include(
         'window.moduleBroker.lookup("discourse/lib/theme-settings-store")',
       )
+    end
+
+    it "strips data-test-* attributes in production mode" do
+      script = <<~JS.chomp
+        export default class Foo {
+          <template>
+            <div data-test-my-element class="keep">hello</div>
+          </template>
+        }
+      JS
+
+      modules = { "discourse/components/foo.gjs" => script }
+      entrypoints = { main: { modules: ["discourse/components/foo.gjs"] } }
+
+      unminified = AssetProcessor.new.rollup(modules, { themeId: 22, entrypoints: entrypoints })
+      expect(entrypoint(unminified, "main")["code"]).to include("data-test-my-element")
+
+      minified =
+        AssetProcessor.new.rollup(modules, { minify: true, themeId: 22, entrypoints: entrypoints })
+      code = entrypoint(minified, "main")["code"]
+      expect(code).not_to include("data-test-my-element")
+      expect(code).to include("keep")
+    end
+
+    it "preserves optionality of cross-plugin imports" do
+      script = <<~JS.chomp
+        import Example from "discourse/plugins/styleguide/discourse/components/example" with { discourseImport: "optional" };
+        console.log(Example);
+      JS
+
+      result =
+        AssetProcessor.new.rollup(
+          { "discourse/components/foo.js" => script },
+          {
+            pluginName: "chat",
+            entrypoints: {
+              main: {
+                modules: ["discourse/components/foo.js"],
+              },
+            },
+          },
+        )
+
+      code = entrypoint(result, "main")["code"]
+      expect(code).to include('"discourse/plugins/styleguide?"')
+      expect(code).not_to include('"discourse/plugins/styleguide"')
     end
 
     it "can use themePrefix not in a template" do
@@ -181,8 +246,11 @@ RSpec.describe AssetProcessor do
       JS
 
       result =
-        AssetProcessor.new.rollup({ "discourse/initializers/foo.js" => script }, { themeId: 22 })
-      expect(result["code"]).to include(
+        AssetProcessor.new.rollup(
+          { "discourse/initializers/foo.js" => script },
+          { themeId: 22, entrypoints: { main: { modules: ["discourse/initializers/foo.js"] } } },
+        )
+      expect(entrypoint(result, "main")["code"]).to include(
         'window.moduleBroker.lookup("discourse/lib/theme-settings-store")',
       )
     end
@@ -196,9 +264,19 @@ RSpec.describe AssetProcessor do
     result =
       AssetProcessor.new.rollup(
         { "discourse/connectors/outlet-name/foo.hbs" => template },
-        { themeId: 22 },
+        {
+          themeId: 22,
+          entrypoints: {
+            main: {
+              modules: ["discourse/connectors/outlet-name/foo.hbs"],
+            },
+          },
+        },
       )
-    expect(result["code"]).to include("createTemplateFactory")
+    code = entrypoint(result, "main")["code"]
+    expect(code).to include("createTemplateFactory")
+    expect(code).to include("deprecated(")
+    expect(code).to include('id: "discourse.hbs-extension"')
   end
 
   it "handles colocation" do
@@ -222,13 +300,58 @@ RSpec.describe AssetProcessor do
           "discourse/components/foo.hbs" => template,
           "discourse/components/bar.hbs" => onlyTemplate,
         },
-        { themeId: 22 },
+        {
+          themeId: 22,
+          entrypoints: {
+            main: {
+              modules: %w[discourse/components/foo.js discourse/components/bar.hbs],
+            },
+          },
+        },
       )
 
-    expect(result["code"]).to include("setComponentTemplate")
-    expect(result["code"]).to include(
+    expect(entrypoint(result, "main")["code"]).to include("setComponentTemplate")
+    expect(entrypoint(result, "main")["code"]).to include(
       "bar = setComponentTemplate(__COLOCATED_TEMPLATE__, templateOnly());",
     )
+  end
+
+  it "handles colocation of connectors" do
+    js = <<~JS.chomp
+      export default {
+        setupComponent(args, component) {
+          console.log("hello world");
+        }
+      }
+    JS
+
+    template = <<~HBS.chomp
+      {{log "hello world"}}
+    HBS
+
+    result =
+      AssetProcessor.new.rollup(
+        {
+          "discourse/templates/connectors/foo.js" => js,
+          "discourse/templates/connectors/foo.hbs" => template,
+        },
+        {
+          themeId: 22,
+          entrypoints: {
+            main: {
+              modules: %w[
+                discourse/templates/connectors/foo.js
+                discourse/templates/connectors/foo.hbs
+              ],
+            },
+          },
+        },
+      )
+
+    expect(entrypoint(result, "main")["code"]).to include(
+      '"discourse/templates/connectors/foo":',
+    ).once
+    expect(entrypoint(result, "main")["code"]).to include('"discourse/connectors/foo":').once
   end
 
   it "handles relative imports from one module to another" do
@@ -247,10 +370,17 @@ RSpec.describe AssetProcessor do
           "discourse/components/my-component.js" => mod_1,
           "discourse/components/other-component.js" => mod_2,
         },
-        { themeId: 22 },
+        {
+          themeId: 22,
+          entrypoints: {
+            main: {
+              modules: ["discourse/components/other-component.js"],
+            },
+          },
+        },
       )
 
-    expect(result["code"]).not_to include("../components/my-component")
+    expect(entrypoint(result, "main")["code"]).not_to include("../components/my-component")
   end
 
   it "handles relative import of index file" do
@@ -269,10 +399,20 @@ RSpec.describe AssetProcessor do
           "discourse/components/my-component.js" => mod_1,
           "discourse/components/other-component/index.js" => mod_2,
         },
-        { themeId: 22 },
+        {
+          themeId: 22,
+          entrypoints: {
+            main: {
+              modules: %w[
+                discourse/components/my-component.js
+                discourse/components/other-component/index.js
+              ],
+            },
+          },
+        },
       )
 
-    expect(result["code"]).not_to include("../components/my-component")
+    expect(entrypoint(result, "main")["code"]).not_to include("../components/my-component")
   end
 
   it "handles relative import of gjs index file" do
@@ -291,13 +431,124 @@ RSpec.describe AssetProcessor do
           "discourse/components/my-component.gjs" => mod_1,
           "discourse/components/other-component/index.gjs" => mod_2,
         },
-        { themeId: 22 },
+        {
+          themeId: 22,
+          entrypoints: {
+            main: {
+              modules: %w[
+                discourse/components/my-component.gjs
+                discourse/components/other-component/index.gjs
+              ],
+            },
+          },
+        },
       )
 
-    expect(result["code"]).not_to include("../components/my-component")
+    expect(entrypoint(result, "main")["code"]).not_to include("../components/my-component")
+  end
+
+  it "prioritizes exact match over /index match" do
+    mod_1 = <<~JS.chomp
+      export default "module 1";
+    JS
+
+    mod_2 = <<~JS.chomp
+      export default "module 2";
+    JS
+
+    result =
+      AssetProcessor.new.rollup(
+        {
+          "discourse/components/my-component.gjs" => mod_1,
+          "discourse/components/my-component/index.gjs" => mod_2,
+        },
+        {
+          themeId: 22,
+          entrypoints: {
+            main: {
+              modules: %w[
+                discourse/components/my-component/index.gjs
+                discourse/components/my-component.gjs
+              ],
+            },
+          },
+        },
+      )
+
+    expect(entrypoint(result, "main")["code"]).to include("module 1")
+    expect(entrypoint(result, "main")["code"]).to include("module 2")
   end
 
   it "returns the ember version" do
-    expect(AssetProcessor.new.ember_version).to match(/\A\d+\.\d+\.\d+\z/)
+    expect(AssetProcessor.ember_version).to match(/\A\d+\.\d+\.\d+\z/)
+  end
+
+  it "errors on missing relative imports" do
+    mod_1 = <<~JS.chomp
+      import SomeModule from "../some-module";
+      console.log(SomeModule);
+    JS
+
+    expect do
+      AssetProcessor.new.rollup(
+        { "discourse/components/my-component.gjs" => mod_1 },
+        { pluginName: "myplugin" },
+      )
+    end.to raise_error(AssetProcessor::TranspileError)
+  end
+
+  it "outputs entrypoint manifest data" do
+    mod = <<~JS.chomp
+      export default "module 1";
+    JS
+
+    admin_mod = <<~JS.chomp
+      import comp from "./my-component";
+      console.log(comp);
+      export default "module 2";
+    JS
+
+    result =
+      AssetProcessor.new.rollup(
+        {
+          "discourse/components/my-component.gjs" => mod,
+          "discourse/components/my-admin-component.gjs" => admin_mod,
+        },
+        {
+          themeId: 22,
+          entrypoints: {
+            main: {
+              modules: %w[discourse/components/my-component.gjs],
+            },
+            admin: {
+              modules: %w[discourse/components/my-admin-component.gjs],
+            },
+          },
+        },
+      )
+
+    expect(entrypoint(result, "main")["imports"].length).to eq(1)
+    expect(entrypoint(result, "main")["imports"].first).to include("chunk")
+    expect(entrypoint(result, "main")["name"]).to eq("main")
+    expect(entrypoint(result, "main")["isEntry"]).to eq(true)
+
+    expect(entrypoint(result, "admin")["imports"].length).to eq(1)
+    expect(entrypoint(result, "admin")["imports"].first).to include("chunk")
+    expect(entrypoint(result, "admin")["name"]).to eq("admin")
+    expect(entrypoint(result, "admin")["isEntry"]).to eq(true)
+  end
+
+  it "errors on missing relative imports" do
+    mod_1 = <<~JS.chomp
+      import SomeModule from "../some-module";
+      console.log(SomeModule);
+    JS
+
+    expect do
+      AssetProcessor.new.rollup(
+        { "discourse/components/my-component.gjs" => mod_1 },
+        { pluginName: "my-plugin" },
+      )
+    end.to raise_error(AssetProcessor::TranspileError)
   end
 end

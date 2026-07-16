@@ -1,13 +1,11 @@
 # frozen_string_literal: true
 
-RSpec.describe "Member upcoming changes", type: :system do
+RSpec.describe "Member upcoming changes" do
   fab!(:current_user, :user)
   fab!(:admin)
   let(:upcoming_changes_page) { PageObjects::Pages::AdminUpcomingChanges.new }
 
   before do
-    SiteSetting.enable_upcoming_changes = true
-
     mock_upcoming_change_metadata(
       {
         enable_upload_debug_mode: {
@@ -15,17 +13,20 @@ RSpec.describe "Member upcoming changes", type: :system do
           status: :experimental,
           impact_type: "other",
           impact_role: "developers",
+          body_class: true,
         },
         about_page_extra_groups_show_description: {
           impact: "feature,all_members",
           status: :stable,
           impact_type: "feature",
           impact_role: "all_members",
+          body_class: true,
         },
       },
     )
 
     SiteSetting.enable_upload_debug_mode = true
+    SiteSetting.about_page_extra_groups_show_description = false
   end
 
   context "when user is logged in" do

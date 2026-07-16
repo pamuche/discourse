@@ -2,13 +2,18 @@ import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
+import { getOwner } from "@ember/owner";
+import { trackedObject } from "@ember/reactive/collections";
+import didInsert from "@ember/render-modifiers/modifiers/did-insert";
 import didUpdate from "@ember/render-modifiers/modifiers/did-update";
+import { schedule } from "@ember/runloop";
 import { service } from "@ember/service";
-import { htmlSafe } from "@ember/template";
-import icon from "discourse/helpers/d-icon";
+import { trustHTML } from "@ember/template";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
+import { deferAnonymousAction } from "discourse/lib/anonymous-action";
 import round from "discourse/lib/round";
+import dIcon from "discourse/ui-kit/helpers/d-icon";
 import { i18n } from "discourse-i18n";
 import PollBreakdownModal from "../components/modal/poll-breakdown";
 import {
@@ -41,19 +46,15 @@ export default class PollComponent extends Component {
   @service dialog;
   @service modal;
 
-  @tracked vote = this.args.post.polls_votes?.[this.args.poll.name] || [];
   @tracked preloadedVoters = this.defaultPreloadedVoters();
   @tracked voterListExpanded = false;
-  @tracked hasSavedVote = this.vote.length > 0;
 
-  @tracked
-  showResults =
-    !(this.poll.results === ON_CLOSE && !this.closed) &&
-    (this.hasSavedVote ||
-      (this.topicArchived && !this.staffOnly) ||
-      (this.closed && !this.staffOnly));
-
+  @tracked hasSavedVote = this.savedVote.length > 0;
   @tracked showTally = false;
+
+  registerPollButtons = (element) => {
+    this.pollButtonsElement = element;
+  };
 
   checkUserGroups = (user, poll) => {
     const pollGroups =
@@ -68,7 +69,6 @@ export default class PollComponent extends Component {
 
     return userGroups && pollGroups.some((g) => userGroups.includes(g));
   };
-
   areRanksValid = (arr) => {
     let ranks = new Set(); // Using a Set to keep track of unique ranks
     let hasNonZeroDuplicate = false;
@@ -89,6 +89,9 @@ export default class PollComponent extends Component {
 
     return !hasNonZeroDuplicate && !allZeros;
   };
+  @tracked _vote = this.initialVote();
+
+  @tracked _showResults = this.initialShowResults();
 
   _toggleOption = (option, rank = 0) => {
     if (this.isMultiple) {
@@ -122,6 +125,67 @@ export default class PollComponent extends Component {
 
     this.vote = [...this.vote];
   };
+
+  get showResults() {
+    return this._showResults;
+  }
+
+  set showResults(value) {
+    this._showResults = value;
+    this.poll.showResultsToggle = value;
+  }
+
+  get resultsVisibilityAllowed() {
+    return (
+      !(this.poll.results === ON_CLOSE && !this.closed) &&
+      !(this.staffOnly && !this.isStaff)
+    );
+  }
+
+  get resultsToggleAllowed() {
+    return !this.hideResultsDisabled && this.resultsVisibilityAllowed;
+  }
+
+  initialShowResults() {
+    if (
+      this.poll.showResultsToggle !== undefined &&
+      this.resultsToggleAllowed
+    ) {
+      return this.poll.showResultsToggle;
+    }
+
+    return (
+      this.resultsVisibilityAllowed &&
+      (this.hasSavedVote || this.hideResultsDisabled)
+    );
+  }
+
+  get vote() {
+    return this._vote;
+  }
+
+  set vote(value) {
+    this._vote = value;
+    this.poll.inProgressVote = value;
+  }
+
+  initialVote() {
+    if (this.poll.inProgressVote !== undefined) {
+      return this.copyVote(this.poll.inProgressVote);
+    }
+
+    return this.savedVote;
+  }
+
+  get savedVote() {
+    return this.copyVote(this.args.post.polls_votes?.[this.poll.name] || []);
+  }
+
+  copyVote(votes) {
+    return this.isRankedChoice
+      ? votes.map((vote) => ({ ...vote }))
+      : [...votes];
+  }
 
   get poll() {
     return this.args.poll;
@@ -170,7 +234,7 @@ export default class PollComponent extends Component {
   }
 
   get titleHTML() {
-    return htmlSafe(this.args.titleHTML);
+    return trustHTML(this.args.titleHTML);
   }
 
   get topicArchived() {
@@ -222,6 +286,11 @@ export default class PollComponent extends Component {
       });
 
       this.hasSavedVote = true;
+      if (!this.args.post.polls_votes) {
+        this.args.post.polls_votes = trackedObject();
+      }
+      this.args.post.polls_votes[this.poll.name] = this.copyVote(this.vote);
+      this.poll.inProgressVote = undefined;
       Object.assign(this.poll, poll);
 
       this.appEvents.trigger("poll:voted", poll, this.post, this.vote);
@@ -314,13 +383,28 @@ export default class PollComponent extends Component {
   }
 
   @action
-  toggleOption(option, rank = 0) {
+  async toggleOption(option, rank = 0) {
     if (this.closed) {
       return;
     }
 
     if (!this.currentUser) {
-      // unlikely, handled by template logic
+      // Archived topics reject votes server-side, so don't queue them.
+      // Closed topics still accept votes from regular users, so let anon
+      // queue and replay after login.
+      if (this.post?.topic?.archived) {
+        return;
+      }
+      if (!this.isMultiple && !this.isRankedChoice) {
+        return deferAnonymousAction(this, "vote_poll", {
+          post_id: this.post.id,
+          poll_name: this.poll.name,
+          options: [option.id],
+        });
+      }
+      // Multi-choice / ranked-choice anonymous votes can't be saved on a
+      // single click since the selection isn't complete until "Cast Votes".
+      getOwner(this).lookup("route:application").send("showLogin");
       return;
     }
 
@@ -350,7 +434,25 @@ export default class PollComponent extends Component {
 
   @action
   toggleResults() {
+    const anchor = this.pollButtonsElement;
+    const anchorTop = anchor?.getBoundingClientRect().top;
+
     this.showResults = !this.showResults;
+
+    if (anchorTop == null) {
+      return;
+    }
+
+    schedule("afterRender", () => {
+      if (!anchor.isConnected) {
+        return;
+      }
+
+      const shift = anchor.getBoundingClientRect().top - anchorTop;
+      if (shift !== 0) {
+        window.scrollBy(0, shift);
+      }
+    });
   }
 
   get canCastVotes() {
@@ -446,7 +548,7 @@ export default class PollComponent extends Component {
 
     const average = this.voters === 0 ? 0 : round(totalScore / this.voters, -2);
 
-    return htmlSafe(i18n("poll.average_rating", { average }));
+    return trustHTML(i18n("poll.average_rating", { average }));
   }
 
   get availableDisplayMode() {
@@ -561,6 +663,10 @@ export default class PollComponent extends Component {
         }
         this.vote = Object.assign([]);
         this.hasSavedVote = false;
+        if (this.args.post.polls_votes) {
+          delete this.args.post.polls_votes[this.poll.name];
+        }
+        this.poll.inProgressVote = undefined;
         this.appEvents.trigger("poll:voted", poll, this.post, this.vote);
         this.showResults = false;
       })
@@ -585,8 +691,8 @@ export default class PollComponent extends Component {
             status,
           },
         })
-          .then(() => {
-            this.poll.status = status;
+          .then(({ poll }) => {
+            Object.assign(this.poll, poll);
 
             if (
               this.poll.results === ON_CLOSE ||
@@ -634,7 +740,7 @@ export default class PollComponent extends Component {
 
     // This uses the Data Explorer plugin export as CSV route
     // There is detection to check if the plugin is enabled before showing the button
-    ajax(`/admin/plugins/explorer/queries/${queryID}/run.csv`, {
+    ajax(`/admin/plugins/discourse-data-explorer/queries/${queryID}/run.csv`, {
       type: "POST",
       data: {
         // needed for data-explorer route compatibility
@@ -726,6 +832,7 @@ export default class PollComponent extends Component {
         @isMultiple={{this.isMultiple}}
         @close={{this.close}}
         @closed={{this.closed}}
+        @closedBy={{this.poll.closed_by}}
         @results={{this.poll.results}}
         @showResults={{this.showResults}}
         @postUserId={{this.poll.post.user_id}}
@@ -734,7 +841,7 @@ export default class PollComponent extends Component {
         @hasVoted={{this.hasVoted}}
         @voters={{this.voters}}
       />
-      <div class="poll-buttons">
+      <div class="poll-buttons" {{didInsert this.registerPollButtons}}>
         {{#if this.showCastVotesButton}}
           <button
             class={{this.castVotesButtonClass}}
@@ -742,7 +849,7 @@ export default class PollComponent extends Component {
             disabled={{this.castVotesDisabled}}
             {{on "click" this.castVotes}}
           >
-            {{icon this.castVotesButtonIcon}}
+            {{dIcon this.castVotesButtonIcon}}
             <span class="d-button-label">{{i18n "poll.cast-votes.label"}}</span>
           </button>
         {{/if}}
@@ -753,7 +860,7 @@ export default class PollComponent extends Component {
             title={{i18n "poll.hide-results.title"}}
             {{on "click" this.toggleResults}}
           >
-            {{icon "chevron-left"}}
+            {{dIcon "chevron-left"}}
             <span class="d-button-label">{{i18n
                 "poll.hide-results.label"
               }}</span>
@@ -766,7 +873,7 @@ export default class PollComponent extends Component {
             title={{i18n "poll.show-results.title"}}
             {{on "click" this.toggleResults}}
           >
-            {{icon "chart-bar"}}
+            {{dIcon "chart-bar"}}
             <span class="d-button-label">{{i18n
                 "poll.show-results.label"
               }}</span>
@@ -779,7 +886,7 @@ export default class PollComponent extends Component {
             title={{i18n "poll.remove-vote.title"}}
             {{on "click" this.removeVote}}
           >
-            {{icon "arrow-rotate-left"}}
+            {{dIcon "arrow-rotate-left"}}
             <span class="d-button-label">{{i18n
                 "poll.remove-vote.label"
               }}</span>

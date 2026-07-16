@@ -40,7 +40,6 @@ class ApplicationController < ActionController::Base
   before_action :set_mp_snapshot_fields
   before_action :clear_notifications
   around_action :with_resolved_locale
-  before_action :set_mobile_view
   before_action :block_if_readonly_mode
   before_action :authorize_mini_profiler
   before_action :redirect_to_login_if_required
@@ -53,6 +52,7 @@ class ApplicationController < ActionController::Base
   after_action :add_readonly_header
   after_action :perform_refresh_session
   after_action :conditionally_allow_site_embedding
+
   after_action :ensure_vary_header
   after_action :add_noindex_header,
                if: -> { is_feed_request? || !SiteSetting.allow_index_in_robots_txt }
@@ -63,6 +63,8 @@ class ApplicationController < ActionController::Base
 
   HONEYPOT_KEY = "HONEYPOT_KEY"
   CHALLENGE_KEY = "CHALLENGE_KEY"
+  MINI_PROFILER_AUTH_COOKIE_EXPIRES_IN = 1.hour
+  MINI_PROFILER_CLASS = defined?(Rack::MiniProfiler) ? Rack::MiniProfiler : nil
 
   layout :set_layout
 
@@ -76,15 +78,14 @@ class ApplicationController < ActionController::Base
   helper_method :show_browser_update?
 
   def use_crawler_layout?
-    @use_crawler_layout ||=
-      request.user_agent && (request.media_type.blank? || request.media_type.include?("html")) &&
-        !%w[json rss].include?(params[:format]) &&
-        (
-          has_escaped_fragment? || params.key?("print") || show_browser_update? ||
-            CrawlerDetection.crawler?(request.user_agent, request.headers["HTTP_VIA"])
-        )
+    @use_crawler_layout ||= CrawlerDetection.crawler_layout_request?(request)
   end
   helper_method :use_crawler_layout?
+
+  def include_splash_screen?
+    !Rails.env.test?
+  end
+  helper_method :include_splash_screen?
 
   def perform_refresh_session
     refresh_session(current_user) unless @readonly_mode
@@ -98,8 +99,12 @@ class ApplicationController < ActionController::Base
 
   def dont_cache_page
     if !response.headers["Cache-Control"] && response.cache_control.blank?
-      response.cache_control[:no_cache] = true
-      response.cache_control[:extras] = ["no-store"]
+      if SiteSetting.cache_control_bfcache_compatibility
+        response.cache_control[:no_cache] = true
+      else
+        response.cache_control[:no_cache] = true
+        response.cache_control[:extras] = ["no-store"]
+      end
     end
     response.headers["Discourse-No-Onebox"] = "1" if SiteSetting.login_required
   end
@@ -108,24 +113,15 @@ class ApplicationController < ActionController::Base
     response.headers.delete("X-Frame-Options") if SiteSetting.allow_embedding_site_in_an_iframe
   end
 
-  def ember_cli_required?
-    Rails.env.development? && ENV["ALLOW_EMBER_CLI_PROXY_BYPASS"] != "1" &&
-      request.headers["X-Discourse-Ember-CLI"] != "true"
-  end
-
-  def application_layout
-    ember_cli_required? ? "ember_cli" : "application"
-  end
-
   def set_layout
     case request.headers["Discourse-Render"]
     when "desktop"
-      return application_layout
+      return "application"
     when "crawler"
       return "crawler"
     end
 
-    use_crawler_layout? ? "crawler" : application_layout
+    use_crawler_layout? ? "crawler" : "application"
   end
 
   class RenderEmpty < StandardError
@@ -136,6 +132,12 @@ class ApplicationController < ActionController::Base
 
   rescue_from RenderEmpty do
     with_resolved_locale { render "default/empty" }
+  end
+
+  rescue_from EmberAssets::BuildError do |e|
+    @build_error = e.details
+    response.headers["Cache-Control"] = "no-store"
+    render "default/build_error", layout: false, status: :service_unavailable
   end
 
   rescue_from ArgumentError do |e|
@@ -292,8 +294,8 @@ class ApplicationController < ActionController::Base
     opts ||= {}
 
     show_json_errors =
-      (request.format && request.format.json?) || (request.xhr?) ||
-        ((params[:external_id] || "").to_s.ends_with?(".json"))
+      (request.format && request.format.json?) || request.xhr? ||
+        (params[:external_id] || "").to_s.ends_with?(".json")
 
     if type == :not_found && opts[:check_permalinks]
       url = opts[:original_path] || request.fullpath
@@ -310,26 +312,27 @@ class ApplicationController < ActionController::Base
       end
     end
 
-    message = title = nil
+    message = nil
     with_resolved_locale(check_current_user: false) do
-      if opts[:custom_message]
-        title = message = I18n.t(opts[:custom_message], opts[:custom_message_params] || {})
-      else
-        message = I18n.t(type)
-        if status_code == 403
-          title = I18n.t("page_forbidden.title")
+      message =
+        if opts[:custom_message]
+          I18n.t(opts[:custom_message], opts[:custom_message_params] || {})
         else
-          title = I18n.t("page_not_found.title")
+          I18n.t(type)
         end
-      end
     end
 
-    error_page_opts = { title: title, status: status_code, group: opts[:group] }
+    error_page_opts = {
+      status: status_code,
+      group: opts[:group],
+      custom_message: opts[:custom_message],
+      custom_message_params: opts[:custom_message_params],
+    }
 
     if show_json_errors
       opts = { type: type, status: status_code }
 
-      with_resolved_locale(check_current_user: false) do
+      with_resolved_locale do
         # Include error in HTML format for topics#show.
         if (request.params[:controller] == "topics" && request.params[:action] == "show") ||
              (
@@ -440,10 +443,6 @@ class ApplicationController < ActionController::Base
     I18n.with_locale(locale) { yield }
   end
 
-  def set_mobile_view
-    session[:mobile_view] = params[:mobile_view] if params.has_key?(:mobile_view)
-  end
-
   NO_THEMES = "no_themes"
   NO_PLUGINS = "no_plugins"
   NO_UNOFFICIAL_PLUGINS = "no_unofficial_plugins"
@@ -477,7 +476,7 @@ class ApplicationController < ActionController::Base
   def guardian
     # sometimes we log on a user in the middle of a request so we should throw
     # away the cached guardian instance when we do that
-    if (@guardian&.user).blank? && current_user.present?
+    if @guardian&.user.blank? && current_user.present?
       @guardian = Guardian.new(current_user, request)
     end
     @guardian ||= Guardian.new(current_user, request)
@@ -564,6 +563,15 @@ class ApplicationController < ActionController::Base
     user
   end
 
+  def fetch_target_user
+    if params[:username].present? || params[:external_id].present?
+      raise Discourse::InvalidAccess if !is_api? || !guardian.is_admin?
+      fetch_user_from_params
+    else
+      current_user
+    end
+  end
+
   def post_ids_including_replies
     post_ids = params[:post_ids].map(&:to_i)
     post_ids |= PostReply.where(post_id: params[:reply_post_ids]).pluck(:reply_post_id) if params[
@@ -616,7 +624,7 @@ class ApplicationController < ActionController::Base
       ApplicationLayoutPreloader.new(
         guardian:,
         theme_id: @theme_id,
-        theme_target: view_context.mobile_view? ? :mobile : :desktop,
+        theme_target: view_context.mobile_device? ? :mobile : :desktop,
         login_method:,
       )
   end
@@ -684,12 +692,25 @@ class ApplicationController < ActionController::Base
   end
 
   def mini_profiler_enabled?
-    defined?(Rack::MiniProfiler) && (guardian.is_developer? || Rails.env.development?)
+    return false unless MINI_PROFILER_CLASS
+    return true if Rails.env.development?
+    return true if guardian.is_developer?
+
+    if auth = cookies.encrypted[:_mp_auth]
+      user_id = auth[:user_id]
+      issued_at = auth[:issued_at]
+
+      if issued_at && issued_at > MINI_PROFILER_AUTH_COOKIE_EXPIRES_IN.ago.to_i
+        user = User.find_by(id: user_id)
+        return true if user && Guardian.new(user).is_developer?
+      end
+    end
+
+    false
   end
 
   def authorize_mini_profiler
-    return unless mini_profiler_enabled?
-    Rack::MiniProfiler.authorize_request
+    MINI_PROFILER_CLASS.authorize_request if mini_profiler_enabled?
   end
 
   def check_xhr
@@ -744,7 +765,7 @@ class ApplicationController < ActionController::Base
   NO_DESTINATION_COOKIE = %w[/login /signup /session/ /auth/ /uploads/].freeze
 
   def is_valid_destination_url?(url)
-    url.present? && url != path("/") && NO_DESTINATION_COOKIE.none? { url.start_with? path(_1) }
+    url.present? && url != path("/") && NO_DESTINATION_COOKIE.none? { url.start_with? path(it) }
   end
 
   def destination_url
@@ -786,6 +807,11 @@ class ApplicationController < ActionController::Base
         return render plain: I18n.t("user_api_key.invalid_public_key")
       end
 
+      client = UserApiKeyClient.find_by(public_key: params[:user_api_public_key])
+      if client&.auth_redirect.present? && params[:auth_redirect] != client.auth_redirect
+        return render plain: I18n.t("user_api_key.invalid_auth_redirect")
+      end
+
       if UserApiKeyClient.invalid_auth_redirect?(params[:auth_redirect])
         return render plain: I18n.t("user_api_key.invalid_auth_redirect")
       end
@@ -818,10 +844,8 @@ class ApplicationController < ActionController::Base
 
   def should_enforce_2fa?
     enforcing_2fa =
-      (
-        (SiteSetting.enforce_second_factor == "staff" && current_user.staff?) ||
-          SiteSetting.enforce_second_factor == "all"
-      )
+      (SiteSetting.enforce_second_factor == "staff" && current_user.staff?) ||
+        SiteSetting.enforce_second_factor == "all"
     !disqualified_from_2fa_enforcement && enforcing_2fa &&
       !current_user.has_any_second_factor_methods_enabled?
   end
@@ -848,6 +872,8 @@ class ApplicationController < ActionController::Base
     second_factor_path = path("/u/#{current_user.encoded_username}/preferences/second-factor")
     allowed_paths = [redirect_path, second_factor_path, path("/admin"), path("/safe-mode")]
     if allowed_paths.none? { |p| request.fullpath.start_with?(p) }
+      cookies[:destination_url] = destination_url.presence
+
       rate_limiter = RateLimiter.new(current_user, "redirect_to_required_fields_log", 1, 24.hours)
 
       if rate_limiter.performed!(raise_error: false)
@@ -896,7 +922,14 @@ class ApplicationController < ActionController::Base
 
     @container_class = "wrap not-found-container"
     @page_title = I18n.t("page_not_found.page_title")
-    @title = opts[:title] || I18n.t("page_not_found.title")
+    @title =
+      if opts[:custom_message]
+        I18n.t(opts[:custom_message], opts[:custom_message_params] || {})
+      elsif opts[:status] == 403
+        I18n.t("page_forbidden.title")
+      else
+        I18n.t("page_not_found.title")
+      end
     @subtitle = opts[:subtitle] || I18n.t("page_not_found.subtitle")
     @group = opts[:group]
     @hide_search = true if SiteSetting.login_required
@@ -934,7 +967,7 @@ class ApplicationController < ActionController::Base
   end
 
   def add_noindex_header_to_non_canonical
-    canonical = (@canonical_url || @default_canonical)
+    canonical = @canonical_url || @default_canonical
     if canonical.present? && canonical != request.url &&
          !SiteSetting.allow_indexing_non_canonical_urls
       response.headers["X-Robots-Tag"] ||= "noindex"
@@ -1030,6 +1063,10 @@ class ApplicationController < ActionController::Base
 
   def fetch_limit_from_params(params: self.params, default:, max:)
     fetch_int_from_params(:limit, params: params, default: default, max: max)
+  end
+
+  def fetch_page_from_params(params: self.params, default: 0, max: nil)
+    fetch_int_from_params(:page, params: params, default: default, min: 0, max: max)
   end
 
   def fetch_int_from_params(key, params: self.params, default:, min: 0, max: nil)

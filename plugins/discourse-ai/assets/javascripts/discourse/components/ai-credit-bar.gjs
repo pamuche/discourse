@@ -1,8 +1,8 @@
 import Component from "@glimmer/component";
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
 import DTooltip from "discourse/float-kit/components/d-tooltip";
-import concatClass from "discourse/helpers/concat-class";
 import { number } from "discourse/lib/formatter";
+import dConcatClass from "discourse/ui-kit/helpers/d-concat-class";
 import { i18n } from "discourse-i18n";
 
 /**
@@ -26,7 +26,7 @@ export default class AiCreditBar extends Component {
   }
 
   get fillStyle() {
-    return htmlSafe(`width: ${this.args.allocation.percentage_remaining}%`);
+    return trustHTML(`width: ${this.args.allocation.percentage_remaining}%`);
   }
 
   get barText() {
@@ -71,7 +71,7 @@ export default class AiCreditBar extends Component {
     {{#if this.shouldShowTooltip}}
       <DTooltip @content={{this.tooltipText}}>
         <:trigger>
-          <div class={{concatClass "ai-credit-bar" this.barClass}}>
+          <div class={{dConcatClass "ai-credit-bar" this.barClass}}>
             <div class="ai-credit-bar__progress">
               <div class="ai-credit-bar__fill" style={{this.fillStyle}}></div>
             </div>
@@ -82,7 +82,7 @@ export default class AiCreditBar extends Component {
         </:trigger>
       </DTooltip>
     {{else}}
-      <div class={{concatClass "ai-credit-bar" this.barClass}}>
+      <div class={{dConcatClass "ai-credit-bar" this.barClass}}>
         <div class="ai-credit-bar__progress">
           <div class="ai-credit-bar__fill" style={{this.fillStyle}}></div>
         </div>

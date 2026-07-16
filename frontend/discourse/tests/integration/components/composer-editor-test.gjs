@@ -1,3 +1,4 @@
+/* eslint-disable qunit/no-conditional-assertions */
 import { click, fillIn, find, render } from "@ember/test-helpers";
 import { module, test } from "qunit";
 import ComposerEditor from "discourse/components/composer-editor";
@@ -46,6 +47,17 @@ module("Integration | Component | ComposerEditor", function (hooks) {
     await render(<template><ComposerEditor /></template>);
 
     await fillIn("textarea", "@user-no @user-ok @user-nope");
+  });
+
+  test("fires composer:reply-changed on user input", async function (assert) {
+    const appEvents = this.owner.lookup("service:app-events");
+    let fired = false;
+    appEvents.on("composer:reply-changed", () => (fired = true));
+
+    await render(<template><ComposerEditor /></template>);
+    await fillIn(".d-editor-input", "hello");
+
+    assert.true(fired, "fires when the reply text changes");
   });
 
   test("preview sanitizes HTML", async function (assert) {

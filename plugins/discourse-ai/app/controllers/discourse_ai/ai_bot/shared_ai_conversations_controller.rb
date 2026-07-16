@@ -4,7 +4,7 @@ module DiscourseAi
   module AiBot
     class SharedAiConversationsController < ::ApplicationController
       requires_plugin PLUGIN_NAME
-      requires_login only: %i[create update destroy]
+      requires_login only: %i[create destroy preview]
       before_action :require_site_settings!
 
       skip_before_action :preload_json, :check_xhr, only: %i[show asset]
@@ -39,7 +39,9 @@ module DiscourseAi
 
       def show
         @shared_conversation = SharedAiConversation.find_by(share_key: params[:share_key])
-        raise Discourse::NotFound if @shared_conversation.blank?
+        if @shared_conversation.blank? || !@shared_conversation.publicly_visible?
+          raise Discourse::NotFound
+        end
 
         expires_in 1.minute, public: true
         response.headers["X-Robots-Tag"] = "noindex"
@@ -101,7 +103,7 @@ module DiscourseAi
         @shared_conversation = SharedAiConversation.find_by(target: @topic)
 
         @error = DiscourseAi::AiBot::EntryPoint.ai_share_error(@topic, guardian)
-        if @error == :not_allowed
+        if @error
           raise Discourse::InvalidAccess.new(
                   nil,
                   nil,

@@ -7,31 +7,24 @@ class Admin::GroupsController < Admin::StaffController
   end
 
   def create
-    guardian.ensure_can_create_group!
-
-    attributes = group_params.to_h.except(:owner_usernames, :usernames)
-    group = Group.new(attributes)
-
-    group.membership_request_template = nil unless group_params[:allow_membership_requests]
-
-    if group_params[:owner_usernames].present?
-      owner_ids = User.where(username: group_params[:owner_usernames].split(",")).pluck(:id)
-
-      owner_ids.each { |user_id| group.group_users.build(user_id: user_id, owner: true) }
-    end
-
-    if group_params[:usernames].present?
-      user_ids = User.where(username: group_params[:usernames].split(",")).pluck(:id)
-      user_ids -= owner_ids if owner_ids
-
-      user_ids.each { |user_id| group.group_users.build(user_id: user_id) }
-    end
-
-    if group.save
-      group.restore_user_count!
-      render_serialized(group, BasicGroupSerializer)
-    else
-      render_json_error group
+    Groups::Create.call(
+      guardian:,
+      params: group_params.except(*DiscoursePluginRegistry.group_params),
+      options: {
+        dynamic_attributes: group_params.slice(*DiscoursePluginRegistry.group_params),
+      },
+    ) do |result|
+      on_success { |group:| render_serialized(group, BasicGroupSerializer) }
+      on_failed_policy(:can_create_group) { |policy| raise Discourse::InvalidAccess }
+      on_failed_policy(:can_request_access) do
+        render json:
+                 failed_json.merge(
+                   errors: [I18n.t("groups.errors.cant_allow_membership_requests")],
+                 ),
+               status: :unprocessable_entity
+      end
+      on_model_errors(:group) { |group:| render_json_error(group) }
+      on_failure { render(json: failed_json, status: :unprocessable_entity) }
     end
   end
 
@@ -84,6 +77,7 @@ class Admin::GroupsController < Admin::StaffController
   end
 
   def automatic_membership_count
+    guardian.ensure_can_create_group!
     domains = Group.get_valid_email_domains(params.require(:automatic_membership_email_domains))
     group_id = params[:id]
     user_count = 0
@@ -100,18 +94,13 @@ class Admin::GroupsController < Admin::StaffController
       end
 
       if domains.size > MAX_AUTO_MEMBERSHIP_DOMAINS_LOOKUP
-        raise Discourse::InvalidParameters.new(
-                I18n.t(
-                  "groups.errors.counting_too_many_email_domains",
-                  count: MAX_AUTO_MEMBERSHIP_DOMAINS_LOOKUP,
-                ),
-              )
+        user_count = nil
+      else
+        user_count = Group.automatic_membership_users(domains.join("|")).count
       end
-
-      user_count = Group.automatic_membership_users(domains.join("|")).count
     end
 
-    render json: { user_count: user_count }
+    render json: { user_count: }
   end
 
   protected

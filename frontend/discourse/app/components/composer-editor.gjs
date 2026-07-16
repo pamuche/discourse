@@ -1,4 +1,4 @@
-/* eslint-disable ember/no-classic-components */
+/* eslint-disable ember/no-classic-components, ember/no-observers, ember/require-tagless-components */
 import { tracked } from "@glimmer/tracking";
 import Component from "@ember/component";
 import { hash } from "@ember/helper";
@@ -11,19 +11,15 @@ import { service } from "@ember/service";
 import { classNameBindings } from "@ember-decorators/component";
 import { observes, on } from "@ember-decorators/object";
 import { BasePlugin } from "@uppy/core";
-import $ from "jquery";
 import { resolveAllShortUrls } from "pretty-text/upload-short-url";
-import DEditor from "discourse/components/d-editor";
 import DEditorPreview from "discourse/components/d-editor-preview";
-import { applyHtmlDecorators } from "discourse/components/decorated-html";
 import Wrapper from "discourse/components/form-template-field/wrapper";
-import PickFilesButton from "discourse/components/pick-files-button";
 import PostTranslationEditor from "discourse/components/post-translation-editor";
 import lazyHash from "discourse/helpers/lazy-hash";
 import { ajax } from "discourse/lib/ajax";
 import { tinyAvatar } from "discourse/lib/avatar-utils";
 import { setupComposerPosition } from "discourse/lib/composer/composer-position";
-import discourseComputed, { bind, debounce } from "discourse/lib/decorators";
+import { bind, debounce } from "discourse/lib/decorators";
 import prepareFormTemplateData from "discourse/lib/form-template-validation";
 import {
   fetchUnseenHashtagsInContext,
@@ -47,6 +43,9 @@ import { formatUsername } from "discourse/lib/utilities";
 import Composer from "discourse/models/composer";
 import FormTemplateChooser from "discourse/select-kit/components/form-template-chooser";
 import { gt } from "discourse/truth-helpers";
+import { applyHtmlDecorators } from "discourse/ui-kit/d-decorated-html";
+import DEditor from "discourse/ui-kit/d-editor";
+import DPickFilesButton from "discourse/ui-kit/d-pick-files-button";
 import { i18n } from "discourse-i18n";
 
 let uploadHandlers = [];
@@ -109,8 +108,6 @@ export default class ComposerEditor extends Component {
   @tracked preview;
 
   composerEventPrefix = "composer";
-  shouldBuildScrollMap = true;
-  scrollMap = null;
 
   fileUploadElementId = "file-uploader";
 
@@ -129,18 +126,23 @@ export default class ComposerEditor extends Component {
     });
   }
 
+  willDestroyElement() {
+    super.willDestroyElement(...arguments);
+    this.uppyComposerUpload.teardown();
+  }
+
   get topic() {
     return this.composer.get("model.topic");
   }
 
-  @discourseComputed(
+  @computed(
     "composer.model.requiredCategoryMissing",
     "currentUser.useRichEditor"
   )
-  replyPlaceholder(requiredCategoryMissing) {
+  get replyPlaceholder() {
     let placeholder = "composer.reply_placeholder_choose_category";
 
-    if (!requiredCategoryMissing) {
+    if (!this.composer?.model?.requiredCategoryMissing) {
       const allowImages = authorizesOneOrMoreImageExtensions(
         this.currentUser.staff,
         this.siteSettings
@@ -158,15 +160,15 @@ export default class ComposerEditor extends Component {
       placeholder = `composer.${key}`;
     }
 
-    return applyValueTransformer(
-      "composer-editor-reply-placeholder",
-      placeholder,
-      { model: this.composer }
+    return i18n(
+      applyValueTransformer("composer-editor-reply-placeholder", placeholder, {
+        model: this.composer,
+      })
     );
   }
 
-  @discourseComputed
-  showLink() {
+  @computed
+  get showLink() {
     return this.currentUser && this.currentUser.link_posting_access !== "none";
   }
 
@@ -177,8 +179,8 @@ export default class ComposerEditor extends Component {
     }
   }
 
-  @discourseComputed
-  markdownOptions() {
+  @computed
+  get markdownOptions() {
     return {
       previewing: true,
 
@@ -243,14 +245,18 @@ export default class ComposerEditor extends Component {
 
   @action
   _composerEditorInitPreview(elem) {
-    const preview = elem.querySelector(".d-editor-preview-wrapper");
+    const preview = elem.classList.contains("d-editor-preview-wrapper")
+      ? elem
+      : elem.querySelector(".d-editor-preview-wrapper");
     this._registerImageAltTextButtonClick(preview);
     this._editorInitPreview = true;
   }
 
   @action
   _composerEditorDestroyPreview(elem) {
-    const preview = elem.querySelector(".d-editor-preview-wrapper");
+    const preview = elem.classList.contains("d-editor-preview-wrapper")
+      ? elem
+      : elem.querySelector(".d-editor-preview-wrapper");
 
     if (preview) {
       preview.removeEventListener(
@@ -281,6 +287,13 @@ export default class ComposerEditor extends Component {
   _composerEditorDestroyEditor(elem) {
     if (this.composer.allowUpload && this._cleanupComposerUploadElement) {
       this.uppyComposerUpload.teardown(elem);
+    }
+  }
+
+  @action
+  _composerEditorInitFormTemplate(formEl) {
+    if (this.composer.allowUpload) {
+      this.uppyComposerUpload.setup(formEl);
     }
   }
 
@@ -322,31 +335,25 @@ export default class ComposerEditor extends Component {
     };
   }
 
-  @discourseComputed(
+  @computed(
     "composer.model.reply",
     "composer.model.replyLength",
     "composer.model.missingReplyCharacters",
     "composer.model.minimumPostLength",
     "composer.lastValidatedAt"
   )
-  validation(
-    reply,
-    replyLength,
-    missingReplyCharacters,
-    minimumPostLength,
-    lastValidatedAt
-  ) {
+  get validation() {
     const postType = this.get("composer.post.post_type");
     if (postType === this.site.get("post_types.small_action")) {
       return;
     }
 
     let reason;
-    if (replyLength < 1) {
+    if (this.composer?.model?.replyLength < 1) {
       reason = i18n("composer.error.post_missing");
-    } else if (missingReplyCharacters > 0) {
+    } else if (this.composer?.model?.missingReplyCharacters > 0) {
       reason = i18n("composer.error.post_length", {
-        count: minimumPostLength,
+        count: this.composer?.model?.minimumPostLength,
       });
       const tl = this.get("currentUser.trust_level");
       if ((tl === 0 || tl === 1) && !this._isNewTopic) {
@@ -364,7 +371,7 @@ export default class ComposerEditor extends Component {
       return EmberObject.create({
         failed: true,
         reason,
-        lastShownAt: lastValidatedAt,
+        lastShownAt: this.composer?.lastValidatedAt,
       });
     }
   }
@@ -378,172 +385,33 @@ export default class ComposerEditor extends Component {
     );
   }
 
-  _resetShouldBuildScrollMap() {
-    this.set("shouldBuildScrollMap", true);
-  }
-
-  @bind
-  _handleInputInteraction(event) {
-    const preview = this.element.querySelector(".d-editor-preview-wrapper");
-
-    if (!$(preview).is(":visible")) {
-      return;
-    }
-
-    preview.removeEventListener("scroll", this._handleInputOrPreviewScroll);
-    event.target.addEventListener("scroll", this._handleInputOrPreviewScroll);
-  }
-
-  @bind
-  _handleInputOrPreviewScroll(event) {
-    this._syncScroll(
-      this._syncEditorAndPreviewScroll,
-      $(event.target),
-      $(this.element.querySelector(".d-editor-preview-wrapper"))
-    );
-  }
-
-  @bind
-  _handlePreviewInteraction(event) {
-    this.element
-      .querySelector(".d-editor-input")
-      ?.removeEventListener("scroll", this._handleInputOrPreviewScroll);
-
-    event.target?.addEventListener("scroll", this._handleInputOrPreviewScroll);
-  }
-
-  _syncScroll($callback, $input, $preview) {
-    if (!this.scrollMap || this.shouldBuildScrollMap) {
-      this.set("scrollMap", this._buildScrollMap($input, $preview));
-      this.set("shouldBuildScrollMap", false);
-    }
-
-    throttle(this, $callback, $input, $preview, this.scrollMap, 20);
-  }
-
-  // Adapted from https://github.com/markdown-it/markdown-it.github.io
-  _buildScrollMap($input, $preview) {
-    let sourceLikeDiv = $("<div />")
-      .css({
-        position: "absolute",
-        height: "auto",
-        visibility: "hidden",
-        width: $input[0].clientWidth,
-        "font-size": $input.css("font-size"),
-        "font-family": $input.css("font-family"),
-        "line-height": $input.css("line-height"),
-        "white-space": $input.css("white-space"),
-      })
-      .appendTo("body");
-
-    const linesMap = [];
-    let numberOfLines = 0;
-
-    $input
-      .val()
-      .split("\n")
-      .forEach((text) => {
-        linesMap.push(numberOfLines);
-
-        if (text.length === 0) {
-          numberOfLines++;
-        } else {
-          sourceLikeDiv.text(text);
-
-          let height;
-          let lineHeight;
-          height = parseFloat(sourceLikeDiv.css("height"));
-          lineHeight = parseFloat(sourceLikeDiv.css("line-height"));
-          numberOfLines += Math.round(height / lineHeight);
-        }
-      });
-
-    linesMap.push(numberOfLines);
-    sourceLikeDiv.remove();
-
-    const previewOffsetTop = $preview.offset().top;
-    const offset =
-      $preview.scrollTop() -
-      previewOffsetTop -
-      ($input.offset().top - previewOffsetTop);
-    const nonEmptyList = [];
-    const scrollMap = [];
-    for (let i = 0; i < numberOfLines; i++) {
-      scrollMap.push(-1);
-    }
-
-    nonEmptyList.push(0);
-    scrollMap[0] = 0;
-
-    $preview.find(".preview-sync-line").each((_, element) => {
-      let $element = $(element);
-      let lineNumber = $element.data("line-number");
-      let linesToTop = linesMap[lineNumber];
-      if (linesToTop !== 0) {
-        nonEmptyList.push(linesToTop);
-      }
-      scrollMap[linesToTop] = Math.round($element.offset().top + offset);
-    });
-
-    nonEmptyList.push(numberOfLines);
-    scrollMap[numberOfLines] = $preview[0].scrollHeight;
-
-    let position = 0;
-
-    for (let i = 1; i < numberOfLines; i++) {
-      if (scrollMap[i] !== -1) {
-        position++;
-        continue;
-      }
-
-      let top = nonEmptyList[position];
-      let bottom = nonEmptyList[position + 1];
-
-      scrollMap[i] = (
-        (scrollMap[bottom] * (i - top) + scrollMap[top] * (bottom - i)) /
-        (bottom - top)
-      ).toFixed(2);
-    }
-
-    return scrollMap;
-  }
-
   @bind
   _throttledSyncEditorAndPreviewScroll(event) {
-    const $preview = $(this.element.querySelector(".d-editor-preview-wrapper"));
-
-    throttle(
-      this,
-      this._syncEditorAndPreviewScroll,
-      $(event.target),
-      $preview,
-      20
-    );
+    const preview = this.element.querySelector(".d-editor-preview-wrapper");
+    throttle(this, this._syncEditorAndPreviewScroll, event.target, preview, 20);
   }
 
-  _syncEditorAndPreviewScroll($input, $preview) {
-    if (!$input) {
+  _syncEditorAndPreviewScroll(input, preview) {
+    if (!input || !preview) {
       return;
     }
 
-    if ($input.scrollTop() === 0) {
-      $preview.scrollTop(0);
+    if (input.scrollTop === 0) {
+      preview.scrollTop = 0;
       return;
     }
 
-    const inputHeight = $input[0].scrollHeight;
-    const previewHeight = $preview[0].scrollHeight;
+    const inputHeight = input.scrollHeight;
+    const previewHeight = preview.scrollHeight;
 
-    if ($input.height() + $input.scrollTop() + 100 > inputHeight) {
+    if (input.clientHeight + input.scrollTop + 100 > inputHeight) {
       // cheat, special case for bottom
-      $preview.scrollTop(previewHeight);
+      preview.scrollTop = previewHeight;
       return;
     }
 
-    const scrollPosition = $input.scrollTop();
     const factor = previewHeight / inputHeight;
-    const desired = scrollPosition * factor;
-    $preview.scrollTop(desired + 50);
+    preview.scrollTop = input.scrollTop * factor + 50;
   }
 
   _renderMentions(preview) {
@@ -962,6 +830,11 @@ export default class ComposerEditor extends Component {
   }
 
   @action
+  replyChanged() {
+    this.appEvents.trigger("composer:reply-changed", this.composer.model);
+  }
+
+  @action
   previewUpdated(preview, helper) {
     this._renderMentions(preview);
     this._renderHashtags(preview);
@@ -1009,6 +882,8 @@ export default class ComposerEditor extends Component {
       false
     );
 
+    this.composer.model.set("reply", formTemplateData);
+
     this.preview = await this.cachedCookAsync(
       formTemplateData,
       this.markdownOptions
@@ -1025,17 +900,21 @@ export default class ComposerEditor extends Component {
     this.selectedFormTemplateId = formTemplateId;
   }
 
-  @discourseComputed(
+  @computed(
     "composer.formTemplateIds",
     "composer.model.replyingToTopic",
     "composer.model.editingPost"
   )
-  showFormTemplateForm(formTemplateIds, replyingToTopic, editingPost) {
-    return formTemplateIds?.length > 0 && !replyingToTopic && !editingPost;
+  get showFormTemplateForm() {
+    return (
+      this.composer?.formTemplateIds?.length > 0 &&
+      !this.composer?.model?.replyingToTopic &&
+      !this.composer?.model?.editingPost
+    );
   }
 
-  @discourseComputed("composer.model")
-  forceEditorMode() {
+  @computed("composer.model")
+  get forceEditorMode() {
     return applyValueTransformer("composer-force-editor-mode", null, {
       model: this.composer.model,
     });
@@ -1061,12 +940,16 @@ export default class ComposerEditor extends Component {
               class="composer-select-form-template"
             />
           {{/if}}
-          <form id="form-template-form">
+          <form
+            id="form-template-form"
+            {{didInsert this._composerEditorInitFormTemplate}}
+          >
             <Wrapper
               @id={{this.selectedFormTemplateId}}
               @initialValues={{this.composer.formTemplateInitialValues}}
               @onSelectFormTemplate={{this.composer.onSelectFormTemplate}}
               @onChange={{this.updateFormPreview}}
+              @uppyComposerUpload={{this.uppyComposerUpload}}
             />
           </form>
         </div>
@@ -1093,6 +976,7 @@ export default class ComposerEditor extends Component {
     {{else}}
       <DEditor
         @value={{this.composer.model.reply}}
+        @change={{this.replyChanged}}
         @placeholder={{this.replyPlaceholder}}
         @previewUpdated={{this.previewUpdated}}
         @markdownOptions={{this.markdownOptions}}
@@ -1126,7 +1010,7 @@ export default class ComposerEditor extends Component {
     {{/if}}
 
     {{#if this.composer.allowUpload}}
-      <PickFilesButton
+      <DPickFilesButton
         @fileInputId={{this.fileUploadElementId}}
         @allowMultiple={{true}}
         name="file-uploader"

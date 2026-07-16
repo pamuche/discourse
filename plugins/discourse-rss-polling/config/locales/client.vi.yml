@@ -5,10 +5,28 @@
 # https://translate.discourse.org/
 
 vi:
+  admin_js:
+    admin:
+      site_settings:
+        categories:
+          discourse_rss_polling: "Discourse RSS Polling"
   js:
+    rss_polling:
+      title: RSS Polling
     admin:
       rss_polling:
         author: Tác giả
         feed_url: URL
-        discourse_category: Danh mục
+        discourse_category: Chuyên mục
         discourse_tags: Thẻ
+        feeds:
+          edit: Sửa
+          delete: Xóa
+          save: Lưu lại
+          confirm_delete: "Bạn có chắc chắn muốn xóa nguồn cấp này?"
+        test:
+          title: Xem trước
+          dismiss: Bỏ qua
+        status:
+          enabled: Đã bật
+          disabled: Vô hiệu hóa

@@ -82,6 +82,32 @@ RSpec.describe TopicTrackingState do
   describe ".publish_new" do
     include_examples("publishes message to right groups and users", "/new", :publish_new)
     include_examples("does not publish message for private topics", :publish_new)
+
+    it "includes tags as objects with id when tagging is enabled" do
+      SiteSetting.tagging_enabled = true
+      tag1 = Fabricate(:tag)
+      tag2 = Fabricate(:tag)
+      topic.tags = [tag1, tag2]
+      topic.save!
+
+      message = MessageBus.track_publish("/new") { described_class.publish_new(topic) }.first
+
+      expect(message.data["payload"]["tags"]).to contain_exactly(
+        { "id" => tag1.id },
+        { "id" => tag2.id },
+      )
+    end
+
+    it "does not include tags when tagging is disabled" do
+      SiteSetting.tagging_enabled = false
+      tag = Fabricate(:tag)
+      topic.tags = [tag]
+      topic.save!
+
+      message = MessageBus.track_publish("/new") { described_class.publish_new(topic) }.first
+
+      expect(message.data["payload"]["tags"]).to be_nil
+    end
   end
 
   describe ".publish_latest" do
@@ -100,19 +126,30 @@ RSpec.describe TopicTrackingState do
       expect(message.user_ids).to eq(nil)
     end
 
-    it "publishes whisper post to staff users and members of whisperers group" do
-      whisperers_group = Fabricate(:group)
-      Fabricate(:user, groups: [whisperers_group])
-      Fabricate(:topic_user_watching, topic: topic, user: user)
-      SiteSetting.whispers_allowed_groups = "#{whisperers_group.id}"
+    it "includes tags as objects with id when tagging is enabled" do
+      SiteSetting.tagging_enabled = true
+      tag1 = Fabricate(:tag)
+      tag2 = Fabricate(:tag)
+      topic.tags = [tag1, tag2]
+      topic.save!
+
+      message = MessageBus.track_publish("/latest") { described_class.publish_latest(topic) }.first
+
+      expect(message.data["payload"]["tags"]).to contain_exactly(
+        { "id" => tag1.id },
+        { "id" => tag2.id },
+      )
+    end
+
+    it "does not publish whisper posts to /latest" do
       post.update!(post_type: Post.types[:whisper])
 
-      message =
-        MessageBus
-          .track_publish("/latest") { TopicTrackingState.publish_latest(post.topic, true) }
-          .first
+      messages =
+        MessageBus.track_publish("/latest") do
+          Jobs::PostUpdateTopicTrackingState.new.execute(post_id: post.id)
+        end
 
-      expect(message.group_ids).to contain_exactly(whisperers_group.id, Group::AUTO_GROUPS[:staff])
+      expect(messages).to be_empty
     end
   end
 
@@ -176,6 +213,22 @@ RSpec.describe TopicTrackingState do
       expect(data["topic_id"]).to eq(topic.id)
       expect(data["message_type"]).to eq(described_class::UNREAD_MESSAGE_TYPE)
       expect(data["payload"]["archetype"]).to eq(Archetype.default)
+    end
+
+    it "includes tags as objects with id when tagging is enabled" do
+      SiteSetting.tagging_enabled = true
+      tag1 = Fabricate(:tag)
+      tag2 = Fabricate(:tag)
+      topic.tags = [tag1, tag2]
+      topic.save!
+
+      message =
+        MessageBus.track_publish("/unread") { TopicTrackingState.publish_unread(post) }.first
+
+      expect(message.data["payload"]["tags"]).to contain_exactly(
+        { "id" => tag1.id },
+        { "id" => tag2.id },
+      )
     end
 
     it "does not publish unread to the user who created the post" do
@@ -271,6 +324,31 @@ RSpec.describe TopicTrackingState do
 
         expect(messages).to eq([])
       end
+    end
+
+    it "allows plugins to modify the scope via topic_tracking_state_publish_unread_scope modifier" do
+      user_to_exclude = Fabricate(:user)
+      Fabricate(:topic_user_watching, topic: topic, user: user_to_exclude)
+
+      messages = MessageBus.track_publish("/unread") { TopicTrackingState.publish_unread(post) }
+      expect(messages.first.user_ids).to include(user_to_exclude.id)
+
+      plugin = Plugin::Instance.new
+      modifier_block = Proc.new { |scope, _post| scope.where.not(user_id: user_to_exclude.id) }
+      DiscoursePluginRegistry.register_modifier(
+        plugin,
+        :topic_tracking_state_publish_unread_scope,
+        &modifier_block
+      )
+
+      messages = MessageBus.track_publish("/unread") { TopicTrackingState.publish_unread(post) }
+      expect(messages.first.user_ids).not_to include(user_to_exclude.id)
+    ensure
+      DiscoursePluginRegistry.unregister_modifier(
+        plugin,
+        :topic_tracking_state_publish_unread_scope,
+        &modifier_block
+      )
     end
   end
 
@@ -683,7 +761,9 @@ RSpec.describe TopicTrackingState do
       report = TopicTrackingState.report(user)
       expect(report.length).to eq(1)
       row = report[0]
-      expect(row.tags).to contain_exactly("apples", "bananas")
+      expect(row.tags.map { |t| t["id"] }).to contain_exactly(
+        *Tag.where(name: %w[apples bananas]).pluck(:id),
+      )
     end
   end
 
@@ -735,6 +815,20 @@ RSpec.describe TopicTrackingState do
     expect(TopicTrackingState.report(user)).to be_empty
   end
 
+  it "does not report a topic as unread when its only new post is a small action" do
+    TopicUser.change(
+      user.id,
+      topic.id,
+      notification_level: TopicUser.notification_levels[:tracking],
+      last_read_post_number: 1,
+    )
+
+    topic.add_small_action(Discourse.system_user, "closed.enabled")
+
+    expect(topic.reload.highest_post_number).to eq(1)
+    expect(TopicTrackingState.report(user).map(&:topic_id)).not_to include(topic.id)
+  end
+
   describe ".report" do
     it "correctly reports topics with staff posts" do
       SiteSetting.whispers_allowed_groups = "#{Group::AUTO_GROUPS[:staff]}"
@@ -758,51 +852,51 @@ RSpec.describe TopicTrackingState do
   describe ".report_totals" do
     fab!(:user2, :user)
 
-    it "correctly returns new/unread totals" do
+    it "correctly returns combined new + unread totals" do
       report = TopicTrackingState.report_totals(user)
-      expect(report).to eq({ new: 0, unread: 0 })
+      expect(report).to eq({ new: 0 })
 
       post.topic.notifier.watch_topic!(post.topic.user_id)
 
       report = TopicTrackingState.report_totals(user)
-      expect(report).to eq({ new: 1, unread: 0 })
+      expect(report).to eq({ new: 1 })
 
       create_post(user: user, topic: post.topic)
 
-      # when user replies, they have 0 new count
+      # when user replies, they have 0 combined new+unread count
       report = TopicTrackingState.report_totals(user)
-      expect(report).to eq({ new: 0, unread: 0 })
+      expect(report).to eq({ new: 0 })
 
-      # when we reply the poster will have an unread item
+      # when we reply the poster will have one combined new+unread item
       report = TopicTrackingState.report_totals(post.user)
-      expect(report).to eq({ new: 0, unread: 1 })
+      expect(report).to eq({ new: 1 })
 
       create_post(user: user2, topic: post.topic)
 
-      # when a third user replies, the original user should have an unread item
+      # when a third user replies, the original user should have one combined new+unread item
       report = TopicTrackingState.report_totals(user)
-      expect(report).to eq({ new: 0, unread: 1 })
+      expect(report).to eq({ new: 1 })
 
-      # the post user still has one unread
+      # the post user still has one combined new+unread item
       report = TopicTrackingState.report_totals(post.user)
-      expect(report).to eq({ new: 0, unread: 1 })
+      expect(report).to eq({ new: 1 })
 
       post2 = create_post
       post2.topic.notifier.watch_topic!(user.id)
 
-      # watching another new topic bumps the new count
+      # watching another new topic bumps the combined new+unread count
       report = TopicTrackingState.report_totals(user)
-      expect(report).to eq({ new: 1, unread: 1 })
+      expect(report).to eq({ new: 2 })
     end
 
     it "respects treat_as_new_topic_start_date user option" do
       report = TopicTrackingState.report_totals(user)
-      expect(report).to eq({ new: 0, unread: 0 })
+      expect(report).to eq({ new: 0 })
 
       post.topic.notifier.watch_topic!(post.topic.user_id)
 
       report = TopicTrackingState.report_totals(user)
-      expect(report).to eq({ new: 1, unread: 0 })
+      expect(report).to eq({ new: 1 })
 
       user.user_option.new_topic_duration_minutes = 5
       user.user_option.save
@@ -810,31 +904,7 @@ RSpec.describe TopicTrackingState do
       post.topic.save
 
       report = TopicTrackingState.report_totals(user)
-      expect(report).to eq({ new: 0, unread: 0 })
-    end
-
-    it "respects new_new_view_enabled" do
-      new_new_group = Fabricate(:group)
-      SiteSetting.experimental_new_new_view_groups = new_new_group.name
-      user.groups << new_new_group
-
-      report = TopicTrackingState.report_totals(user)
       expect(report).to eq({ new: 0 })
-
-      post.topic.notifier.watch_topic!(post.topic.user_id)
-
-      post2 = create_post
-      Fabricate(:post, topic: post2.topic)
-
-      tracking = {
-        notification_level: TopicUser.notification_levels[:tracking],
-        last_read_post_number: 1,
-      }
-
-      TopicUser.change(user.id, post2.topic_id, tracking)
-
-      report = TopicTrackingState.report_totals(user)
-      expect(report).to eq({ new: 2 })
     end
   end
 

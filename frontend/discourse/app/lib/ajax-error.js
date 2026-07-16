@@ -1,17 +1,26 @@
-import { htmlSafe } from "@ember/template";
-import $ from "jquery";
+import { trustHTML } from "@ember/template";
 import { getOwnerWithFallback } from "discourse/lib/get-owner";
 import { i18n } from "discourse-i18n";
 
-export function extractErrorInfo(error, defaultMessage) {
+export function extractErrorInfo(
+  error,
+  defaultMessage,
+  opts = { skipConsoleError: false }
+) {
+  const skipConsoleError = opts.skipConsoleError ?? false;
+
   if (error instanceof Error) {
-    // eslint-disable-next-line no-console
-    console.error(error.stack);
+    if (!skipConsoleError) {
+      // eslint-disable-next-line no-console
+      console.error(error.stack);
+    }
   }
 
   if (typeof error === "string") {
-    // eslint-disable-next-line no-console
-    console.error(error);
+    if (!skipConsoleError) {
+      // eslint-disable-next-line no-console
+      console.error(error);
+    }
   }
 
   if (error.jqXHR) {
@@ -28,7 +37,7 @@ export function extractErrorInfo(error, defaultMessage) {
 
   if (!parsedJSON && error.responseText) {
     try {
-      parsedJSON = $.parseJSON(error.responseText);
+      parsedJSON = JSON.parse(error.responseText);
     } catch (ex) {
       // in case the JSON doesn't parse
       // eslint-disable-next-line no-console
@@ -55,6 +64,8 @@ export function extractErrorInfo(error, defaultMessage) {
       parsedError = parsedJSON.message;
     } else if (parsedJSON.failed) {
       parsedError = parsedJSON.failed;
+    } else if (parsedJSON.error_key) {
+      parsedError = i18n(parsedJSON.error_key);
     }
   }
 
@@ -67,6 +78,8 @@ export function extractErrorInfo(error, defaultMessage) {
   return {
     html,
     message: parsedError || defaultMessage || i18n("generic_error"),
+    errorKey: parsedJSON?.error_key ?? null,
+    status: error.status ?? null,
   };
 }
 
@@ -95,7 +108,7 @@ export function popupAjaxError(error) {
   const errorInfo = extractErrorInfo(error);
 
   if (errorInfo.html) {
-    dialog.alert({ message: htmlSafe(errorInfo.message) });
+    dialog.alert({ message: trustHTML(errorInfo.message) });
   } else {
     dialog.alert(errorInfo.message);
   }

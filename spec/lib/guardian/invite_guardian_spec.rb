@@ -233,6 +233,7 @@ RSpec.describe InviteGuardian do
 
     it "returns true for all users when sso is enabled" do
       SiteSetting.discourse_connect_url = "https://www.example.com/sso"
+      SiteSetting.discourse_connect_secret = "x" * 10
       SiteSetting.enable_discourse_connect = true
 
       expect(Guardian.new(trust_level_2).can_invite_via_email?(topic)).to be_truthy
@@ -290,16 +291,20 @@ RSpec.describe InviteGuardian do
   ###### DELETION ######
 
   describe "#can_destroy_all_invites?" do
-    it "returns true for admin users" do
-      expect(Guardian.new(admin).can_destroy_all_invites?).to be_truthy
+    it "returns true for admin users for any target user" do
+      expect(Guardian.new(admin).can_destroy_all_invites?(user)).to be_truthy
     end
 
-    it "returns true for moderators" do
-      expect(Guardian.new(moderator).can_destroy_all_invites?).to be_truthy
+    it "returns true for moderators for their own invites" do
+      expect(Guardian.new(moderator).can_destroy_all_invites?(moderator)).to be_truthy
+    end
+
+    it "returns false for moderators for another user's invites" do
+      expect(Guardian.new(moderator).can_destroy_all_invites?(user)).to be_falsey
     end
 
     it "returns false for regular users" do
-      expect(Guardian.new(user).can_destroy_all_invites?).to be_falsey
+      expect(Guardian.new(user).can_destroy_all_invites?(user)).to be_falsey
     end
   end
 end

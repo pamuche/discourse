@@ -1,8 +1,15 @@
+import { tracked } from "@glimmer/tracking";
 import Controller from "@ember/controller";
-import discourseComputed from "discourse/lib/decorators";
+import { computed } from "@ember/object";
 import { applyValueTransformer } from "discourse/lib/transformer";
 
+const DEFAULT_BACK_LINK = {
+  route: "adminReports",
+  label: "admin.reports.back",
+};
+
 export default class AdminReportsShowController extends Controller {
+  @tracked backLink = DEFAULT_BACK_LINK;
   queryParams = applyValueTransformer("admin-reports-show-query-params", [
     "start_date",
     "end_date",
@@ -15,17 +22,29 @@ export default class AdminReportsShowController extends Controller {
   filters = null;
   chart_grouping = null;
 
-  @discourseComputed("model.type")
-  reportOptions(type) {
+  setBackLink({ route, query, label }) {
+    this.backLink = { route, query, label };
+  }
+
+  resetBackLink() {
+    this.backLink = DEFAULT_BACK_LINK;
+  }
+
+  @computed("model.type")
+  get reportOptions() {
     let options = { table: { perPage: 50, limit: 50 } };
 
-    if (type === "top_referred_topics") {
+    if (this.model?.type === "top_referred_topics") {
       options.table.limit = 10;
     }
 
-    if (type === "site_traffic") {
+    if (this.model?.type === "site_traffic") {
       options.stackedChart = {
-        hiddenLabels: ["page_view_other", "page_view_crawler"],
+        hiddenLabels: [
+          "page_view_other",
+          "page_view_crawler",
+          "page_view_embed",
+        ],
       };
     }
 

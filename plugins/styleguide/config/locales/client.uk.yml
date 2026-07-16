@@ -71,8 +71,6 @@ uk:
           title: "Список тем"
         basic_topic_list:
           title: "Основний список тем"
-        footer_message:
-          title: "Повідомлення нижнього колонтитула"
         signup_cta:
           title: "Реєстрація CTA"
         topic_timer_info:
@@ -87,6 +85,8 @@ uk:
           title: "Список публікацій"
           empty_example: "<PostList /> порожній стан"
           populated_example: "<PostList /> заповнений стан"
+        post_oneboxes:
+          title: "Пошта OneBoxes"
         topic_map:
           title: "Карта теми"
         site_header:
@@ -95,10 +95,13 @@ uk:
           title: "Більше тем"
         post_menu:
           title: "Меню повідомлення"
+        docked_composer:
+          title: "Закріплений редактор"
         modal:
           title: "Модальний"
           header: "Модальний заголовок"
           footer: "Модальний нижній колонтитул"
+          open: "Відкрити модальне вікно"
         user_about:
           title: "Вікно «Про користувача»"
         header_icons:
@@ -117,3 +120,5 @@ uk:
         char_counter:
           title: "Лічильник символів"
           placeholder: "Введіть свій текст тут..."
+        segmented_control:
+          title: "Сегментний контроль (група перемикачів кнопки)"

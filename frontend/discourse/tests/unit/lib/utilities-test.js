@@ -1,3 +1,4 @@
+/* eslint-disable qunit/no-conditional-assertions */
 import { getOwner } from "@ember/owner";
 import { setupTest } from "ember-qunit";
 import { module, test } from "qunit";
@@ -15,6 +16,8 @@ import {
   inCodeBlock,
   initializeDefaultHomepage,
   mergeSortedLists,
+  replaceTableRaw,
+  selectedHTML,
   setCaretPosition,
   setDefaultHomepage,
   slugify,
@@ -292,6 +295,113 @@ module("Unit | Utilities", function (hooks) {
   });
 });
 
+module("Unit | Utilities | selectedHTML", function (hooks) {
+  setupTest(hooks);
+
+  test("drops a trailing empty block left by a triple-click selection", function (assert) {
+    const container = document.createElement("div");
+    container.classList.add("cooked");
+    // Whitespace text nodes between/inside blocks mirror real cooked HTML.
+    container.innerHTML =
+      "<p>Contribute by commenting and offering feedback.</p>\n" +
+      "<blockquote>\n<p>If you need help, contact the admins.</p></blockquote>";
+    document.body.appendChild(container);
+
+    try {
+      const paragraph = container.querySelector("p");
+      const innerParagraph = container.querySelector("blockquote p");
+
+      // A real triple-click on the paragraph over-extends the selection to
+      // offset 0 of the next block's first child, so cloneContents() yields a
+      // trailing <blockquote>\n<p></p></blockquote> (verified in Chromium).
+      const range = document.createRange();
+      range.setStart(paragraph.firstChild, 0);
+      range.setEnd(innerParagraph, 0);
+
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      const html = selectedHTML();
+
+      assert.true(
+        html.includes("Contribute by commenting"),
+        "keeps the selected paragraph"
+      );
+      assert.false(
+        html.includes("blockquote"),
+        `drops the trailing empty blockquote (got: ${html})`
+      );
+    } finally {
+      window.getSelection().removeAllRanges();
+      container.remove();
+    }
+  });
+
+  test("keeps a trailing block that wraps media", function (assert) {
+    const container = document.createElement("div");
+    container.classList.add("cooked");
+    container.innerHTML =
+      "<p>Intro.</p>" + "<p><img src='/uploads/cat.png' alt='cat'>caption</p>";
+    document.body.appendChild(container);
+
+    try {
+      const paragraph = container.querySelector("p");
+      const caption = container.querySelectorAll("p")[1].childNodes[1];
+
+      // Selection ends at offset 0 of the caption text, so the second paragraph
+      // clones to <p><img></p> — text-empty but still carrying the image.
+      const range = document.createRange();
+      range.setStart(paragraph.firstChild, 0);
+      range.setEnd(caption, 0);
+
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      const html = selectedHTML();
+
+      assert.true(
+        html.includes("cat.png"),
+        `keeps a text-empty block that wraps media (got: ${html})`
+      );
+    } finally {
+      window.getSelection().removeAllRanges();
+      container.remove();
+    }
+  });
+
+  test("does not trim when the selection ends mid-content", function (assert) {
+    const container = document.createElement("div");
+    container.classList.add("cooked");
+    container.innerHTML = "<p>First paragraph.</p><p>Second paragraph.</p>";
+    document.body.appendChild(container);
+
+    try {
+      const [first, second] = container.querySelectorAll("p");
+
+      // endOffset !== 0: a normal selection, never treated as over-extension.
+      const range = document.createRange();
+      range.setStart(first.firstChild, 0);
+      range.setEnd(second.firstChild, 6);
+
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      const html = selectedHTML();
+
+      assert.true(
+        html.includes("Second"),
+        `keeps the partially-selected trailing block (got: ${html})`
+      );
+    } finally {
+      window.getSelection().removeAllRanges();
+      container.remove();
+    }
+  });
+});
+
 module("Unit | Utilities | clipboard", function (hooks) {
   setupTest(hooks);
 
@@ -468,6 +578,19 @@ module("Unit | Utilities | table-builder", function (hooks) {
       arrayToTable(tableData, ["Col 1", "Col 2", "Col 3", "Col 4"]),
       "|Col 1 | Col 2 | Col 3 | Col 4|\n|--- | --- | --- | ---|\n|`a\\|b` | ![image\\|200x50](/images/discourse-logo-sketch.png) |  | \\||\n|1\\|1 | 2\\|2 | 3\\|3 | 4\\|4|\n",
       "it creates a valid table"
+    );
+  });
+
+  test("replaceTableRaw", function (assert) {
+    const raw = "Some text\n\nMaterial | Value\n--- | ---\nA | 1\n\nMore text";
+    const result = replaceTableRaw(
+      raw,
+      [2, 5],
+      "| Material | Value |\n| --- | --- |\n| A | 1 |"
+    );
+    assert.strictEqual(
+      result,
+      "Some text\n\n| Material | Value |\n| --- | --- |\n| A | 1 |\n\nMore text"
     );
   });
 

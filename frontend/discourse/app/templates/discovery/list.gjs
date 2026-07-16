@@ -4,7 +4,6 @@ import Navigation from "discourse/components/discovery/navigation";
 import Topics from "discourse/components/discovery/topics";
 import TagInfo from "discourse/components/tag-info";
 import { and } from "discourse/truth-helpers";
-import { i18n } from "discourse-i18n";
 
 export default <template>
   <Layout
@@ -13,6 +12,16 @@ export default <template>
     @toggleTagInfo={{@controller.toggleTagInfo}}
     @listClass="--topic-list"
   >
+    <:aboveNavigation>
+      {{#if (and @controller.model.tag @controller.showTagInfo)}}
+        <TagInfo
+          @tagInfo={{@controller.tagInfo}}
+          @currentUser={{@controller.currentUser}}
+          @loading={{@controller.loadingTagInfo}}
+        />
+      {{/if}}
+    </:aboveNavigation>
+
     <:navigation>
       <Navigation
         @category={{@controller.model.category}}
@@ -26,6 +35,8 @@ export default <template>
         @createTopicDisabled={{@controller.createTopicDisabled}}
         @canCreateTopicOnTag={{@controller.model.canCreateTopicOnTag}}
         @toggleTagInfo={{@controller.toggleTagInfo}}
+        @showTagInfo={{@controller.showTagInfo}}
+        @loadingTagInfo={{@controller.loadingTagInfo}}
         @tagNotification={{@controller.model.tagNotification}}
         @model={{@controller.model.list}}
         @showDismissRead={{@controller.showDismissRead}}
@@ -43,19 +54,9 @@ export default <template>
           @loadMore={{@controller.model.subcategoryList.loadMore}}
         />
       {{/if}}
-      {{#if (and @controller.showTagInfo @controller.model.tag)}}
-        <TagInfo
-          @tag={{@controller.model.tag}}
-          @list={{@controller.model.list}}
-        />
-      {{/if}}
     </:header>
 
     <:list>
-      {{#if @controller.showFakeUpcomingChange}}
-        {{i18n "user.upcoming_changes.title"}}
-      {{/if}}
-
       <Topics
         @period={{@controller.model.list.for_period}}
         @changePeriod={{@controller.changePeriod}}

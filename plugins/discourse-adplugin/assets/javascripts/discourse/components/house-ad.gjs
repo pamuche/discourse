@@ -1,11 +1,8 @@
-import { htmlSafe } from "@ember/template";
+import { computed } from "@ember/object";
+import { trustHTML } from "@ember/template";
 import { isBlank } from "@ember/utils";
-import {
-  attributeBindings,
-  classNameBindings,
-  classNames,
-} from "@ember-decorators/component";
-import discourseComputed from "discourse/lib/decorators";
+import { tagName } from "@ember-decorators/component";
+import dConcatClass from "discourse/ui-kit/helpers/d-concat-class";
 import AdComponent from "./ad-component";
 
 const adIndex = {
@@ -14,11 +11,10 @@ const adIndex = {
   topic_above_suggested: null,
   post_bottom: null,
   topic_list_between: null,
+  nested_roots_between: null,
 };
 
-@classNames("house-creative")
-@classNameBindings("adUnitClass")
-@attributeBindings("colspanAttribute:colspan")
+@tagName("")
 export default class HouseAd extends AdComponent {
   adHtml = "";
   currentAd = null;
@@ -31,55 +27,44 @@ export default class HouseAd extends AdComponent {
     }
   };
 
-  @discourseComputed
-  colspanAttribute() {
+  @computed
+  get colspanAttribute() {
     return this.tagName === "td" ? "5" : null;
   }
 
-  @discourseComputed("placement", "showAd")
-  adUnitClass(placement, showAd) {
-    return showAd ? `house-${placement}` : "";
+  @computed("placement", "showAd")
+  get adUnitClass() {
+    return this.showAd ? `house-${this.placement}` : "";
   }
 
-  @discourseComputed(
-    "showToGroups",
-    "showAfterPost",
-    "showAfterTopicListItem",
-    "showOnCurrentPage"
-  )
-  showAd(
-    showToGroups,
-    showAfterPost,
-    showAfterTopicListItem,
-    showOnCurrentPage
-  ) {
+  @computed("showToGroups", "showAfterPlacement", "showOnCurrentPage")
+  get showAd() {
     return (
-      showToGroups &&
-      (showAfterPost || showAfterTopicListItem) &&
-      showOnCurrentPage
+      this.showToGroups && this.showAfterPlacement && this.showOnCurrentPage
     );
   }
 
-  @discourseComputed("postNumber", "placement")
-  showAfterPost(postNumber, placement) {
-    if (!postNumber && placement !== "topic-list-between") {
-      return true;
+  @computed("placement", "postNumber", "indexNumber")
+  get showAfterPlacement() {
+    if (this.placement === "topic-list-between") {
+      return this.isNthTopicListItem(
+        parseInt(this.site.get("house_creatives.settings.after_nth_topic"), 10)
+      );
     }
 
-    return this.isNthPost(
-      parseInt(this.site.get("house_creatives.settings.after_nth_post"), 10)
-    );
-  }
-
-  @discourseComputed("placement")
-  showAfterTopicListItem(placement) {
-    if (placement !== "topic-list-between") {
-      return true;
+    if (this.placement === "nested-roots-between") {
+      return this.isNthTopicListItem(
+        parseInt(this.site.get("house_creatives.settings.after_nth_root"), 10)
+      );
     }
 
-    return this.isNthTopicListItem(
-      parseInt(this.site.get("house_creatives.settings.after_nth_topic"), 10)
-    );
+    if (this.postNumber) {
+      return this.isNthPost(
+        parseInt(this.site.get("house_creatives.settings.after_nth_post"), 10)
+      );
+    }
+
+    return true;
   }
 
   chooseAdHtml() {
@@ -90,11 +75,25 @@ export default class HouseAd extends AdComponent {
     // filter out ads that should not be shown on the current page
     const filteredAds = adNames.filter((adName) => {
       const ad = houseAds.creatives[adName];
-      return (
-        ad &&
-        (!ad.category_ids?.length ||
-          ad.category_ids.includes(this.currentCategoryId))
-      );
+      if (!ad) {
+        return false;
+      }
+
+      const hasCategoryScope = ad.category_ids?.length > 0;
+      const hasRouteScope =
+        this.siteSettings.ad_plugin_routes_enabled && ad.routes?.length > 0;
+
+      // Global ad: no scopes
+      if (!hasCategoryScope && !hasRouteScope) {
+        return true;
+      }
+
+      // Scoped ad: match category or route
+      const matchesCategory =
+        hasCategoryScope && ad.category_ids.includes(this.currentCategoryId);
+      const matchesRoute =
+        hasRouteScope && ad.routes.includes(this.currentRouteName);
+      return matchesCategory || matchesRoute;
     });
     if (filteredAds.length > 0) {
       if (!adIndex[placement]) {
@@ -157,11 +156,24 @@ export default class HouseAd extends AdComponent {
         // filter out ads that should not be shown on the current page
         const filteredAds = adNames.filter((adName) => {
           const ad = houseAds.creatives[adName];
-          return (
-            ad &&
-            (!ad.category_ids?.length ||
-              ad.category_ids.includes(this.currentCategoryId))
-          );
+          if (!ad) {
+            return false;
+          }
+
+          const hasCategoryScope = ad.category_ids?.length > 0;
+          const hasRouteScope =
+            this.siteSettings.ad_plugin_routes_enabled && ad.routes?.length > 0;
+
+          if (!hasCategoryScope && !hasRouteScope) {
+            return true;
+          }
+
+          const matchesCategory =
+            hasCategoryScope &&
+            ad.category_ids.includes(this.currentCategoryId);
+          const matchesRoute =
+            hasRouteScope && ad.routes.includes(this.currentRouteName);
+          return matchesCategory || matchesRoute;
         });
         adIndex[placement] = Math.floor(Math.random() * filteredAds.length);
       });
@@ -171,8 +183,10 @@ export default class HouseAd extends AdComponent {
   }
 
   <template>
-    {{#if this.showAd}}
-      {{htmlSafe this.adHtml}}
-    {{/if}}
+    <div class={{dConcatClass "house-creative" this.adUnitClass}} ...attributes>
+      {{#if this.showAd}}
+        {{trustHTML this.adHtml}}
+      {{/if}}
+    </div>
   </template>
 }

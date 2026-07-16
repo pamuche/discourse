@@ -30,6 +30,7 @@ module Chat
             blocks
             channel
             thread_title
+            pinned
           ]
       ),
     )
@@ -90,6 +91,8 @@ module Chat
     end
 
     def users_bookmark
+      return if scope&.user.blank?
+
       @user_bookmark ||= object.bookmarks.find { |bookmark| bookmark.user_id == scope&.user&.id }
     end
 
@@ -214,6 +217,14 @@ module Chat
 
     def thread_title
       object.thread&.title
+    end
+
+    def pinned
+      object.pinned_message.present?
+    end
+
+    def include_pinned?
+      SiteSetting.chat_pinned_messages
     end
 
     def thread

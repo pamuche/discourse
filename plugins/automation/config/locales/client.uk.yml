@@ -5,6 +5,13 @@
 # https://translate.discourse.org/
 
 uk:
+  admin_js:
+    admin:
+      api:
+        scopes:
+          descriptions:
+            automation:
+              trigger_automation: "Запустити автоматизацію через API"
   js:
     admin:
       logs:
@@ -62,8 +69,6 @@ uk:
             label: Тіло
           delay:
             label: Затримка (хвилин)
-          prefers_encrypt:
-            label: Шифрує ПП, якщо можливо
         group:
           label: Група
         text:
@@ -212,9 +217,9 @@ uk:
               description: "Необов’язково, обмежувати лише повідомлення з цими функціями"
           created: Створено
           edited: Відредаговано
-          topics: Всі теми
-          personal_messages: Особисті повідомлення
-          public_topics: Публічні теми (виключати всі захищені категорії)
+          topics: Теми (всі категорії)
+          personal_messages: Тільки особисті повідомлення
+          public_topics: Теми (лише загальнодоступні категорії)
           with_images: Зображення
           with_links: Посилання
           with_code: Код
@@ -317,6 +322,12 @@ uk:
             tags:
               label: Теґи
               description: Список тегів для додавання до теми.
+            closed_automatically:
+              label: Автоматично закриті теми
+              description: Додайте теги до автоматично закритих тем.
+            closed_manually:
+              label: Теми, закриті вручну
+              description: Додайте теги до тем, закритих вручну.
         post:
           fields:
             creator:
@@ -461,6 +472,11 @@ uk:
           runs_today: "%{count} сьогодні"
           runs_this_week: "%{count} цього тижня"
           runs_this_month: "%{count} цього місяця"
+          recent_errors:
+            one: "нещодавно виникла %{count} помилка"
+            few: "нещодавно виникли %{count} помилки"
+            many: "Нещодавно виникли %{count} помилки"
+            other: "Нещодавно виникли %{count} помилки"
           runs:
             label: Запуски
           name:

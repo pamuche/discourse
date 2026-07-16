@@ -1,23 +1,24 @@
 import { fn, hash } from "@ember/helper";
 import { LinkTo } from "@ember/routing";
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
 import InlineEditCheckbox from "discourse/admin/components/inline-edit-checkbox";
 import ThemeSettingEditor from "discourse/admin/components/theme-setting-editor";
 import ThemeSettingRelativesSelector from "discourse/admin/components/theme-setting-relatives-selector";
 import ThemeSiteSettingEditor from "discourse/admin/components/theme-site-setting-editor";
 import ThemeTranslation from "discourse/admin/components/theme-translation";
-import ConditionalLoadingSpinner from "discourse/components/conditional-loading-spinner";
-import DButton from "discourse/components/d-button";
 import PluginOutlet from "discourse/components/plugin-outlet";
-import UserLink from "discourse/components/user-link";
-import icon from "discourse/helpers/d-icon";
-import formatDate from "discourse/helpers/format-date";
 import formatUsername from "discourse/helpers/format-username";
 import lazyHash from "discourse/helpers/lazy-hash";
 import getURL from "discourse/lib/get-url";
 import ColorPalettePicker from "discourse/select-kit/components/color-palette-picker";
 import ComboBox from "discourse/select-kit/components/combo-box";
 import { and, not, or } from "discourse/truth-helpers";
+import DButton from "discourse/ui-kit/d-button";
+import DConditionalLoadingSpinner from "discourse/ui-kit/d-conditional-loading-spinner";
+import DInterpolatedTranslation from "discourse/ui-kit/d-interpolated-translation";
+import DUserLink from "discourse/ui-kit/d-user-link";
+import dFormatDate from "discourse/ui-kit/helpers/d-format-date";
+import dIcon from "discourse/ui-kit/helpers/d-icon";
 import { i18n } from "discourse-i18n";
 
 export default <template>
@@ -41,6 +42,13 @@ export default <template>
             />
           {{/if}}
 
+          <DButton
+            @action={{@controller.changeSource}}
+            @icon="code-branch"
+            @label="admin.customize.theme.change_source.button"
+            class="btn-default"
+          />
+
           <span class="status-message">
             {{#if @controller.updatingRemote}}
               {{i18n "admin.customize.theme.updating"}}
@@ -49,10 +57,24 @@ export default <template>
                 {{#if @controller.hasOverwrittenHistory}}
                   {{i18n "admin.customize.theme.has_overwritten_history"}}
                 {{else}}
-                  {{i18n
-                    "admin.customize.theme.commits_behind"
-                    count=@controller.model.remote_theme.commits_behind
-                  }}
+                  {{#if @controller.displayRemoteBranch}}
+                    <DInterpolatedTranslation
+                      @key="admin.customize.theme.commits_behind_branch"
+                      @options={{hash
+                        count=@controller.model.remote_theme.commits_behind
+                      }}
+                      as |Placeholder|
+                    >
+                      <Placeholder @name="branch">
+                        <code>{{@controller.displayRemoteBranch}}</code>
+                      </Placeholder>
+                    </DInterpolatedTranslation>
+                  {{else}}
+                    {{i18n
+                      "admin.customize.theme.commits_behind"
+                      count=@controller.model.remote_theme.commits_behind
+                    }}
+                  {{/if}}
                 {{/if}}
                 {{#if @controller.model.remote_theme.github_diff_link}}
                   <a href={{@controller.model.remote_theme.github_diff_link}}>
@@ -61,8 +83,19 @@ export default <template>
                 {{/if}}
               {{else}}
                 {{#unless @controller.showRemoteError}}
-                  {{i18n "admin.customize.theme.up_to_date"}}
-                  {{formatDate
+                  {{#if @controller.displayRemoteBranch}}
+                    <DInterpolatedTranslation
+                      @key="admin.customize.theme.up_to_date_branch"
+                      as |Placeholder|
+                    >
+                      <Placeholder @name="branch">
+                        <code>{{@controller.displayRemoteBranch}}</code>
+                      </Placeholder>
+                    </DInterpolatedTranslation>
+                  {{else}}
+                    {{i18n "admin.customize.theme.up_to_date"}}
+                  {{/if}}
+                  {{dFormatDate
                     @controller.model.remote_theme.updated_at
                     leaveAgo="true"
                   }}
@@ -72,7 +105,7 @@ export default <template>
           </span>
         {{else}}
           <span class="status-message">
-            {{icon "circle-info"}}
+            {{dIcon "circle-info"}}
             {{i18n "admin.customize.theme.imported_from_archive"}}
           </span>
         {{/if}}
@@ -82,9 +115,9 @@ export default <template>
           "admin.customize.theme.creator"
         }}</span>
       <span>
-        <UserLink @user={{@controller.model.user}}>
+        <DUserLink @user={{@controller.model.user}}>
           {{formatUsername @controller.model.user.username}}
-        </UserLink>
+        </DUserLink>
       </span>
     {{/if}}
   </div>
@@ -117,110 +150,116 @@ export default <template>
   {{/if}}
 
   {{#unless @controller.model.component}}
-    <section
-      class="form-horizontal theme settings control-unit theme-settings__light-color-scheme"
-    >
-      <div class="row setting">
-        <div class="setting-label">
-          {{i18n "admin.customize.theme.color_scheme"}}
-        </div>
-
-        <div class="setting-value">
-          <div class="color-palette-input-group">
-            <ColorPalettePicker
-              @content={{@controller.colorSchemes}}
-              @value={{@controller.colorSchemeId}}
-              @icon="paintbrush"
-              @options={{hash
-                filterable=true
-                translatedNone=(i18n
-                  "admin.customize.theme.default_light_scheme"
-                )
-              }}
-            />
+    {{#if @controller.showColorSchemePickers}}
+      <section
+        class="form-horizontal theme settings control-unit theme-settings__light-color-scheme"
+      >
+        <div class="row setting">
+          <div class="setting-label">
+            {{i18n "admin.customize.theme.color_scheme"}}
           </div>
 
-          <div class="desc">{{i18n "admin.customize.theme.color_scheme_select"}}
+          <div class="setting-value">
+            <div class="color-palette-input-group">
+              <ColorPalettePicker
+                @content={{@controller.filteredColorSchemes}}
+                @value={{@controller.colorSchemeId}}
+                @icon="paintbrush"
+                @options={{hash
+                  filterable=true
+                  translatedNone=(unless
+                    @controller.model.only_theme_color_schemes
+                    (i18n "admin.customize.theme.default_light_scheme")
+                  )
+                }}
+              />
+            </div>
 
-            {{#if @controller.colorSchemeId}}
-              <LinkTo
-                @route="adminConfig.colorPalettes.show"
-                @model={{@controller.colorSchemeId}}
-              >
-                {{i18n "admin.customize.theme.edit_colors"}}
-              </LinkTo>
+            <div class="desc">{{i18n
+                "admin.customize.theme.color_scheme_select"
+              }}
+
+              {{#if @controller.colorSchemeId}}
+                <LinkTo
+                  @route="adminConfig.colorPalettes.show"
+                  @model={{@controller.colorSchemeId}}
+                >
+                  {{i18n "admin.customize.theme.edit_colors"}}
+                </LinkTo>
+              {{/if}}
+            </div>
+          </div>
+
+          <div class="setting-controls">
+            {{#if @controller.lightColorSchemeChanged}}
+              <DButton
+                @action={{@controller.changeLightScheme}}
+                @icon="check"
+                class="ok submit-light-edit"
+              />
+              <DButton
+                @action={{@controller.cancelChangeLightScheme}}
+                @icon="xmark"
+                class="cancel cancel-light-edit"
+              />
             {{/if}}
           </div>
         </div>
-
-        <div class="setting-controls">
-          {{#if @controller.lightColorSchemeChanged}}
-            <DButton
-              @action={{@controller.changeLightScheme}}
-              @icon="check"
-              class="ok submit-light-edit"
-            />
-            <DButton
-              @action={{@controller.cancelChangeLightScheme}}
-              @icon="xmark"
-              class="cancel cancel-light-edit"
-            />
-          {{/if}}
-        </div>
-      </div>
-    </section>
-    <section
-      class="form-horizontal theme settings control-unit theme-settings__dark-color-scheme"
-    >
-      <div class="row setting">
-        <div class="setting-label">
-          {{i18n "admin.customize.theme.dark_color_scheme"}}
-        </div>
-
-        <div class="setting-value">
-          <div class="color-palette-input-group">
-            <ColorPalettePicker
-              @content={{@controller.colorSchemes}}
-              @value={{@controller.darkColorSchemeId}}
-              @icon="paintbrush"
-              @options={{hash
-                filterable=true
-                translatedNone=(i18n
-                  "admin.customize.theme.default_light_scheme"
-                )
-              }}
-            />
+      </section>
+      <section
+        class="form-horizontal theme settings control-unit theme-settings__dark-color-scheme"
+      >
+        <div class="row setting">
+          <div class="setting-label">
+            {{i18n "admin.customize.theme.dark_color_scheme"}}
           </div>
 
-          <div class="desc">
-            {{i18n "admin.customize.theme.dark_color_scheme_select"}}
+          <div class="setting-value">
+            <div class="color-palette-input-group">
+              <ColorPalettePicker
+                @content={{@controller.filteredColorSchemes}}
+                @value={{@controller.darkColorSchemeId}}
+                @icon="paintbrush"
+                @options={{hash
+                  filterable=true
+                  translatedNone=(unless
+                    @controller.model.only_theme_color_schemes
+                    (i18n "admin.customize.theme.default_light_scheme")
+                  )
+                }}
+              />
+            </div>
 
-            {{#if @controller.darkColorSchemeId}}
-              <LinkTo
-                @route="adminConfig.colorPalettes.show"
-                @model={{@controller.darkColorSchemeId}}
-              >
-                {{i18n "admin.customize.theme.edit_colors"}}
-              </LinkTo>
+            <div class="desc">
+              {{i18n "admin.customize.theme.dark_color_scheme_select"}}
+
+              {{#if @controller.darkColorSchemeId}}
+                <LinkTo
+                  @route="adminConfig.colorPalettes.show"
+                  @model={{@controller.darkColorSchemeId}}
+                >
+                  {{i18n "admin.customize.theme.edit_colors"}}
+                </LinkTo>
+              {{/if}}
+            </div>
+          </div>
+          <div class="setting-controls">
+            {{#if @controller.darkColorSchemeChanged}}
+              <DButton
+                @action={{@controller.changeDarkScheme}}
+                @icon="check"
+                class="ok submit-dark-edit"
+              />
+              <DButton
+                @action={{@controller.cancelChangeDarkScheme}}
+                @icon="xmark"
+                class="cancel cancel-dark-edit"
+              />
             {{/if}}
           </div>
         </div>
-        <div class="setting-controls">
-          {{#if @controller.darkColorSchemeChanged}}
-            <DButton
-              @action={{@controller.changeDarkScheme}}
-              @icon="check"
-              class="ok submit-dark-edit"
-            />
-            <DButton
-              @action={{@controller.cancelChangeDarkScheme}}
-              @icon="xmark"
-              class="cancel cancel-dark-edit"
-            />
-          {{/if}}
-        </div>
-      </div>
-    </section>
+      </section>
+    {{/if}}
   {{/unless}}
 
   {{#if @controller.model.component}}
@@ -290,9 +329,7 @@ export default <template>
         <ul class="removable-list">
           {{#each @controller.model.uploads as |upload|}}
             <li>
-              {{! template-lint-disable no-unnecessary-curly-strings }}
-              {{! workaround for https://github.com/typed-ember/glint/issues/840 }}
-              <span class="col">{{"$"}}{{upload.name}}:
+              <span class="col">${{upload.name}}:
                 <a
                   href={{upload.url}}
                   rel="noopener noreferrer"
@@ -325,7 +362,7 @@ export default <template>
   {{#if (and @controller.extraFiles.length (not @controller.model.system))}}
     <div class="control-unit extra-files">
       <div class="mini-title">{{i18n "admin.customize.theme.extra_files"}}</div>
-      {{! template-lint-disable no-nested-interactive }}
+
       <details>
         <summary>
           {{#if @controller.model.remote_theme}}
@@ -348,7 +385,7 @@ export default <template>
       <div class="mini-title">{{i18n
           "admin.customize.theme.theme_site_settings"
         }}</div>
-      <p><i>{{htmlSafe
+      <p><i>{{trustHTML
             (i18n
               "admin.customize.theme.overriden_site_settings_explanation"
               themeSiteSettingsConfigUrl=(getURL
@@ -396,16 +433,25 @@ export default <template>
         <span class="mini-title">
           {{i18n "admin.customize.theme.theme_translations"}}
         </span>
-        <ComboBox
-          @valueProperty="value"
-          @content={{@controller.availableLocales}}
-          @value={{@controller.locale}}
-          @onChange={{@controller.updateLocale}}
-          @options={{hash filterable=true}}
-          class="translation-selector"
-        />
+        <div class="translation-selector-controls">
+          <PluginOutlet
+            @name="admin-customize-theme-translation-selector"
+            @outletArgs={{lazyHash
+              theme=@controller.model
+              locale=@controller.locale
+            }}
+          />
+          <ComboBox
+            @valueProperty="value"
+            @content={{@controller.availableLocales}}
+            @value={{@controller.locale}}
+            @onChange={{@controller.updateLocale}}
+            @options={{hash filterable=true}}
+            class="translation-selector"
+          />
+        </div>
       </div>
-      <ConditionalLoadingSpinner
+      <DConditionalLoadingSpinner
         @condition={{@controller.model.loadingTranslations}}
       >
         <section
@@ -420,7 +466,7 @@ export default <template>
             />
           {{/each}}
         </section>
-      </ConditionalLoadingSpinner>
+      </DConditionalLoadingSpinner>
     </div>
   {{/if}}
 
@@ -435,14 +481,14 @@ export default <template>
       rel="noopener noreferrer"
       target="_blank"
       class="btn btn-default"
-    >{{icon "desktop"}}{{i18n "admin.customize.theme.preview"}}</a>
+    >{{dIcon "desktop"}}{{i18n "admin.customize.theme.preview"}}</a>
     {{#unless @controller.model.system}}
       <a
         class="btn btn-default export"
         rel="noopener noreferrer"
         target="_blank"
         href={{@controller.downloadUrl}}
-      >{{icon "download"}} {{i18n "admin.export_json.button_text"}}</a>
+      >{{dIcon "download"}} {{i18n "admin.export_json.button_text"}}</a>
     {{/unless}}
 
     {{#if @controller.showConvert}}

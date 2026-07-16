@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-describe "Composer - ProseMirror - Input rules", type: :system do
+describe "Composer - ProseMirror - Input rules" do
   include_context "with prosemirror editor"
 
   it "supports > to create a blockquote" do
@@ -100,16 +100,14 @@ describe "Composer - ProseMirror - Input rules", type: :system do
     expect(rich).to have_css("code", text: "This is code")
   end
 
-  it "supports typographer replacements" do
+  it "does not apply typographer replacements" do
     open_composer
-    composer.type_content(
-      "foo +- bar... test???? wow!!!! x,, y-- --- a--> b<-- c-> d<- e<-> f<--> (tm) (pa)",
-    )
+    text = "foo +- bar... test???? wow!!!! x,, y-- --- a--> b<-- c-> d<- e<-> f<--> (tm) (pa)"
+    composer.type_content(text)
 
-    expect(rich).to have_css(
-      "p",
-      text: "foo ± bar… test??? wow!!! x, y– — a–> b←- c→ d← e←> f←→ ™ ¶",
-    )
+    # Typographer replacements are disabled in the rich editor, so the text is
+    # kept verbatim instead of being converted to ±, …, smart quotes, etc.
+    expect(rich).to have_css("p", text:)
   end
 
   it "supports ---, ***, ___, en-dash+hyphen, em-dash+hyphen to create a horizontal rule" do
@@ -188,6 +186,16 @@ describe "Composer - ProseMirror - Input rules", type: :system do
 
     expect(rich).to have_css("code", text: "not code")
     expect(rich).to have_no_css("code", text: "and this, not code")
+  end
+
+  it "does not convert emoji shortcuts when enable_emoji_shortcuts is disabled" do
+    SiteSetting.enable_emoji_shortcuts = false
+    open_composer
+
+    composer.type_content(":) ")
+
+    expect(rich).to have_no_css("img.emoji")
+    expect(rich).to have_content(":)")
   end
 
   it "doesn't apply input rules immediately after a single backtick" do

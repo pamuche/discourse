@@ -1,16 +1,16 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { Input } from "@ember/component";
-import { fn, hash } from "@ember/helper";
+import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
 import { service } from "@ember/service";
-import DButton from "discourse/components/d-button";
-import concatClass from "discourse/helpers/concat-class";
-import icon from "discourse/helpers/d-icon";
 import withEventValue from "discourse/helpers/with-event-value";
 import discourseLater from "discourse/lib/later";
-import IconPicker from "discourse/select-kit/components/icon-picker";
+import DButton from "discourse/ui-kit/d-button";
+import DIconGridPicker from "discourse/ui-kit/d-icon-grid-picker";
+import dConcatClass from "discourse/ui-kit/helpers/d-concat-class";
+import dIcon from "discourse/ui-kit/helpers/d-icon";
 import { i18n } from "discourse-i18n";
 
 export default class SectionFormLink extends Component {
@@ -79,7 +79,6 @@ export default class SectionFormLink extends Component {
 
   <template>
     <div
-      {{on "dragstart" this.dragHasStarted}}
       {{on "dragover" this.dragOver}}
       {{on "dragenter" this.dragEnter}}
       {{on "dragleave" this.dragLeave}}
@@ -87,33 +86,30 @@ export default class SectionFormLink extends Component {
       {{on "drop" this.dropItem}}
       role="row"
       data-row-id={{@link.objectId}}
-      draggable="true"
-      class={{concatClass
+      class={{dConcatClass
         "sidebar-section-form-link"
         "row-wrapper"
         this.dragCssClass
       }}
     >
       {{#if this.site.desktopView}}
-        <div class="draggable" data-link-name={{@link.name}}>
-          {{icon "grip-lines"}}
+        <div
+          {{on "dragstart" this.dragHasStarted}}
+          class="draggable"
+          data-link-name={{@link.name}}
+          draggable="true"
+        >
+          {{dIcon "grip-lines"}}
         </div>
       {{/if}}
 
       <div class="input-group" role="cell">
-        <IconPicker
-          @name="icon"
+        <DIconGridPicker
           @value={{@link.icon}}
-          @options={{hash
-            maximum=1
-            caretDownIcon="caret-down"
-            caretUpIcon="caret-up"
-            icons=@link.icon
-          }}
-          @onlyAvailable={{true}}
           @onChange={{fn (mut @link.icon)}}
+          @showCaret={{true}}
+          @btnClass={{dConcatClass "btn-default" @link.iconCssClass}}
           aria-label={{i18n "sidebar.sections.custom.links.icon.label"}}
-          class={{@link.iconCssClass}}
         />
 
         {{#if @link.invalidIconMessage}}
@@ -124,6 +120,7 @@ export default class SectionFormLink extends Component {
       </div>
 
       <div class="input-group" role="cell">
+        {{! eslint-disable-next-line ember/template-no-nested-interactive }}
         <Input
           {{on "input" (withEventValue (fn (mut @link.name)))}}
           @type="text"
@@ -142,6 +139,7 @@ export default class SectionFormLink extends Component {
       </div>
 
       <div class="input-group" role="cell">
+        {{! eslint-disable-next-line ember/template-no-nested-interactive }}
         <Input
           {{on "input" (withEventValue (fn (mut @link.value)))}}
           @type="text"

@@ -72,6 +72,38 @@ RSpec.describe UserDestroyer do
           UserDestroyer.new(admin).destroy(user, destroy_opts.merge(block_email: true))
         }.to change { ScreenedEmail.count }.by(2)
       end
+
+      it "also blocks associated account emails if block_email is true" do
+        UserAssociatedAccount.create!(
+          user: user,
+          provider_name: "google_oauth2",
+          provider_uid: "12345",
+          info: {
+            email: "oauth@example.com",
+          },
+        )
+
+        expect {
+          UserDestroyer.new(admin).destroy(user, destroy_opts.merge(block_email: true))
+        }.to change { ScreenedEmail.count }.by(3)
+
+        expect(ScreenedEmail.exists?(email: "oauth@example.com")).to eq(true)
+      end
+
+      it "does not duplicate block when associated account email matches a user email" do
+        UserAssociatedAccount.create!(
+          user: user,
+          provider_name: "google_oauth2",
+          provider_uid: "12345",
+          info: {
+            email: user.email,
+          },
+        )
+
+        expect {
+          UserDestroyer.new(admin).destroy(user, destroy_opts.merge(block_email: true))
+        }.to change { ScreenedEmail.count }.by(2)
+      end
     end
 
     context "when user deletes self" do
@@ -108,6 +140,13 @@ RSpec.describe UserDestroyer do
         UserDestroyer.new(admin).destroy(user)
         expect(Reviewable.where(created_by_id: user.id).count).to eq(0)
       end
+
+      it "removes the queued post even when it has notes" do
+        Fabricate(:reviewable_note, reviewable: reviewable)
+        UserDestroyer.new(admin).destroy(user)
+        expect(Reviewable.where(created_by_id: user.id).count).to eq(0)
+        expect(ReviewableNote.where(reviewable_id: reviewable.id).count).to eq(0)
+      end
     end
 
     context "with a reviewable user" do
@@ -117,6 +156,17 @@ RSpec.describe UserDestroyer do
         UserDestroyer.new(admin).destroy(reviewable.target)
 
         expect(reviewable.reload).to be_rejected
+      end
+
+      it "links the staff action log to the reviewable when passed via opts" do
+        expect {
+          UserDestroyer.new(admin).destroy(reviewable.target, reviewable_id: reviewable.id)
+        }.to change {
+          UserHistory.where(
+            action: UserHistory.actions[:delete_user],
+            reviewable_id: reviewable.id,
+          ).count
+        }.by(1)
       end
     end
 
@@ -228,6 +278,55 @@ RSpec.describe UserDestroyer do
               reviewable.reload
               expect(reviewable).to be_rejected
             end
+
+            it "approves reviewable flags on hidden posts" do
+              spammer_post = Fabricate(:post, user: user)
+              reviewable = PostActionCreator.inappropriate(admin, spammer_post).reviewable
+              spammer_post.update!(
+                hidden: true,
+                hidden_at: Time.zone.now,
+                hidden_reason_id: Post.hidden_reasons[:flag_threshold_reached],
+              )
+              expect(reviewable).to be_pending
+
+              destroy
+
+              expect(reviewable.reload).to be_approved
+            end
+
+            it "rejects queued posts" do
+              reviewable =
+                Fabricate(
+                  :reviewable_queued_post,
+                  created_by: Discourse.system_user,
+                  target_created_by: user,
+                )
+              expect(reviewable).to be_pending
+
+              destroy
+
+              expect(reviewable.reload).to be_rejected
+            end
+
+            it "rejects the user's account reviewable when reviewable_id is a different reviewable" do
+              flag_reviewable =
+                PostActionCreator.inappropriate(admin, Fabricate(:post, user: user)).reviewable
+              account_reviewable = ReviewableUser.create_for(user)
+              destroy_opts[:reviewable_id] = flag_reviewable.id
+
+              destroy
+
+              expect(account_reviewable.reload).to be_rejected
+            end
+
+            it "leaves the user's account reviewable pending when reviewable_id is its id" do
+              account_reviewable = ReviewableUser.create_for(user)
+              destroy_opts[:reviewable_id] = account_reviewable.id
+
+              destroy
+
+              expect(account_reviewable.reload).to be_pending
+            end
           end
         end
 
@@ -259,6 +358,23 @@ RSpec.describe UserDestroyer do
         expect(Invite.exists?(invite.id)).to eq(false)
         expect(InvitedGroup.exists?(invited_group.id)).to eq(false)
         expect(TopicInvite.exists?(topic_invite.id)).to eq(false)
+      end
+
+      it "should delete invites matching associated account emails" do
+        user = Fabricate(:user)
+        invite = Fabricate(:invite, email: "oauth@example.com")
+        UserAssociatedAccount.create!(
+          user: user,
+          provider_name: "google_oauth2",
+          provider_uid: "12345",
+          info: {
+            email: "oauth@example.com",
+          },
+        )
+
+        UserDestroyer.new(admin).destroy(user)
+
+        expect(Invite.exists?(invite.id)).to eq(false)
       end
     end
 

@@ -5,6 +5,10 @@
 # https://translate.discourse.org/
 
 he:
+  category_types:
+    events:
+      name: "אירועים"
+      title: "אירועים"
   reports:
     currently_away:
       title: משתמשים שאינם נמצאים כרגע
@@ -36,7 +40,6 @@ he:
     map_events_to_color: "הקצאת צבע לכל תגית או קטגוריה."
     map_events_title: "דריסת ‚אירועים’ בכותרת סרגל הצד ה‚אירועים הקרובים’ לפי קטגוריה."
     calendar_enabled: "נא להפעיל את התוסף discourse-calendar. כך תתווסף תמיכה בתגית ‎[calendar][/calendar] בפוסט ראשון בנושא."
-    discourse_post_event_enabled: "הפעלת יכולות האירועים. לתשומת ליבך: דורש גם את הפעלת `לוח שנה פעיל`."
     displayed_invitees_limit: "מגביל את מספר המוזמנים שמוצגים לאירוע."
     display_post_event_date_on_topic_title: "מציג את תאריך האירוע אחרי כותרת הנושא."
     use_local_event_date: "להשתמש בתאריך המקומי אחרי כותרת הנושא במקום בזמן יחסי."
@@ -49,7 +52,6 @@ he:
     all_day_event_start_time: "אירועים שלא צוינה להם שעת התחלה יתחילו בשעה הזאת. התבנית היא HH:mm. ל־6:00 בבוקר יש להקליד 06:00"
     all_day_event_end_time: "אירועים שלא צוינה להם שעת סיום יסתיימו בשעה הזאת. התבנית היא HH:mm. ל־6:00 בערב יש להקליד 18:00"
     all_day_event_time_error: "שעה שגויה. התבנית צריכה להיות HH:mm (למשל: 08:00)."
-    calendar_categories: "הצג לוח שנה בראש קטגוריה. הגדרות חובה הן categoryId ו־postId. למשל: categoryId=6;postId=453\n הגדרות תקפות נוספות: tzPicker,‏ weekends ו־defaultView."
     calendar_categories_outlet: "מאפשר לך לשנות איזה מתאם תצוגה יציג את לוח השנה של הקטגוריה."
     working_days: "הגדרת ימי עבודה. ניתן להציג את זמינות הקבוצה באמצעות תגית `timezones` (אזורי זמן) בפוסט, למשל: `‎[timezones group=admins][timezones]‎`"
     working_day_start_hour: "שעת תחילת יום העבודה."
@@ -63,6 +65,12 @@ he:
     sidebar_show_upcoming_events: "הצגת קישור לאירועים קרובים בסרגל הצד תחת ‚עוד’."
     calendar_first_day_of_week: "הגדרת היום הראשון בשבוע לתצוגת לוח שנה. האפשרויות הן שבת, ראשון או שני."
   discourse_calendar:
+    category_type:
+      default_calendar_view:
+        day: "יום"
+        week: "שבוע"
+        month: "חודש"
+        year: "שנה"
     invite_user_notification: "קיבלת הזמנה מאת %{username} אל: %{description}"
     calendar_must_be_in_first_post: "ניתן להשתמש בתגית יומן רק בפוסט הראשון של נושא."
     more_than_one_calendar: "לא יכול להיות יותר מלוח שנה אחד בפוסט."
@@ -77,7 +85,7 @@ he:
       ongoing_event_reminder: "%{title} מתרחש כרגע."
     errors:
       bulk_invite:
-        max_invitees: "%{max_invittes} המוזמנים הראשונים נוצרו. עדיף לנסות לפצל את הקובץ לחלקים קטנים יותר."
+        max_invitees: "%{max_invitees} המוזמנים הראשונים נוצרו. עדיף לנסות לפצל את הקובץ לחלקים קטנים יותר."
         error: "אירעה שגיאה בשליחת הקובץ. נא לנסות שוב מאוחר יותר."
       models:
         event:

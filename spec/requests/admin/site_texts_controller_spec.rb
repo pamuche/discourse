@@ -6,10 +6,7 @@ RSpec.describe Admin::SiteTextsController do
   fab!(:user)
   let(:locale) { I18n.locale }
 
-  after do
-    TranslationOverride.delete_all
-    I18n.reload!
-  end
+  after { I18n.reload! }
 
   describe "#index" do
     context "when logged in as an admin" do
@@ -174,7 +171,6 @@ RSpec.describe Admin::SiteTextsController do
       end
 
       it "returns only untranslated (english) strings" do
-        available_locales = I18n.config.available_locales
         I18n.config.available_locales = %i[en test]
 
         I18n.backend.store_translations(:en, { shrubbery: "Shrubbery" })
@@ -246,7 +242,6 @@ RSpec.describe Admin::SiteTextsController do
                   can_revert: overridden,
                   overridden:,
                   interpolation_keys:,
-                  has_interpolation_keys: interpolation_keys.present?,
                 }
               end
 
@@ -336,7 +331,12 @@ RSpec.describe Admin::SiteTextsController do
         get "/admin/customize/site_texts.json", params: { q: "confirm_old_email", locale: }
         expect(response.status).to eq(200)
         returned_ids = response.parsed_body["site_texts"].map { |t| t["id"] }
-        expect((returned_ids & Admin::SiteTextsController::RESTRICTED_KEYS.to_a)).to be_empty
+        expect(returned_ids & Admin::SiteTextsController::RESTRICTED_KEYS.to_a).to be_empty
+
+        get "/admin/customize/site_texts.json", params: { q: "powered_by", locale: }
+        expect(response.status).to eq(200)
+        returned_ids = response.parsed_body["site_texts"].map { |t| t["id"] }
+        expect(returned_ids).not_to include("js.powered_by_discourse")
       end
     end
 
@@ -479,11 +479,7 @@ RSpec.describe Admin::SiteTextsController do
         expect(response.status).to eq(200)
         json = response.parsed_body
 
-        expect(json["site_text"]["interpolation_keys"]).to include(
-          "username",
-          "name",
-          "name_or_username",
-        )
+        expect(json["site_text"]["interpolation_keys"]).to eq(%w[name name_or_username username])
       end
 
       context "with plural keys" do
@@ -973,7 +969,7 @@ RSpec.describe Admin::SiteTextsController do
             I18n.t("staff_category_name", locale: :de),
           )
           expect(Topic.find(SiteSetting.guidelines_topic_id).title).to eq(
-            I18n.t("guidelines_topic.title", locale: :de),
+            I18n.t("guidelines_topic.guidelines_title", locale: :de),
           )
         end
       end

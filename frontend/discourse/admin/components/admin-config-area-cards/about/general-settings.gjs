@@ -10,18 +10,18 @@ import { i18n } from "discourse-i18n";
 export default class AdminConfigAreasAboutGeneralSettings extends Component {
   @service toasts;
 
-  name = this.args.generalSettings.title.value;
-  summary = this.args.generalSettings.siteDescription.value;
-  extendedDescription = this.args.generalSettings.extendedSiteDescription.value;
-  aboutBannerImage = this.args.generalSettings.aboutBannerImage.value;
-
   @cached
   get data() {
     return {
-      name: this.args.generalSettings.title.value,
-      summary: this.args.generalSettings.siteDescription.value,
-      extendedDescription:
-        this.args.generalSettings.extendedSiteDescription.value,
+      name: this.#settingValue("title", this.args.generalSettings.title),
+      summary: this.#settingValue(
+        "site_description",
+        this.args.generalSettings.siteDescription
+      ),
+      extendedDescription: this.#settingValue(
+        "extended_site_description",
+        this.args.generalSettings.extendedSiteDescription
+      ),
       communityTitle: this.args.generalSettings.communityTitle.value,
       aboutBannerImage: this.args.generalSettings.aboutBannerImage.value,
     };
@@ -31,17 +31,9 @@ export default class AdminConfigAreasAboutGeneralSettings extends Component {
   async save(data) {
     try {
       this.args.setGlobalSavingStatus(true);
-      await ajax("/admin/config/about.json", {
+      await ajax(this.#savePath, {
         type: "PUT",
-        data: {
-          general_settings: {
-            name: data.name,
-            summary: data.summary,
-            extended_description: data.extendedDescription,
-            community_title: data.communityTitle,
-            about_banner_image: data.aboutBannerImage,
-          },
-        },
+        data: this.#saveData(data),
       });
       this.toasts.success({
         duration: "short",
@@ -58,6 +50,44 @@ export default class AdminConfigAreasAboutGeneralSettings extends Component {
     }
   }
 
+  get #savePath() {
+    if (this.args.isDefaultLocale) {
+      return "/admin/config/about.json";
+    }
+
+    return "/admin/config/about/localizations.json";
+  }
+
+  get nameValidation() {
+    return this.args.isDefaultLocale ? "required" : null;
+  }
+
+  #saveData(data) {
+    const payload = {
+      locale: this.args.locale,
+      general_settings: {
+        name: data.name,
+        summary: data.summary,
+        extended_description: data.extendedDescription,
+      },
+    };
+
+    if (this.args.isDefaultLocale) {
+      payload.general_settings.about_banner_image = data.aboutBannerImage;
+      payload.general_settings.community_title = data.communityTitle;
+    }
+
+    return payload;
+  }
+
+  #settingValue(settingName, setting) {
+    if (this.args.isDefaultLocale) {
+      return setting.value;
+    }
+
+    return this.args.localizations?.[settingName]?.value ?? "";
+  }
+
   @action
   setImage(upload, { set }) {
     set("aboutBannerImage", upload?.url);
@@ -68,11 +98,12 @@ export default class AdminConfigAreasAboutGeneralSettings extends Component {
       <form.Field
         @name="name"
         @title={{i18n "admin.config_areas.about.community_name"}}
-        @validation="required"
+        @validation={{this.nameValidation}}
         @format="large"
+        @type="input"
         as |field|
       >
-        <field.Input
+        <field.Control
           placeholder={{i18n
             "admin.config_areas.about.community_name_placeholder"
           }}
@@ -83,38 +114,46 @@ export default class AdminConfigAreasAboutGeneralSettings extends Component {
         @name="summary"
         @title={{i18n "admin.config_areas.about.community_summary"}}
         @format="large"
+        @type="input"
         as |field|
       >
-        <field.Input />
+        <field.Control />
       </form.Field>
 
       <form.Field
         @name="extendedDescription"
         @title={{i18n "admin.config_areas.about.community_description"}}
+        @type="composer"
         as |field|
       >
-        <field.Composer />
+        <field.Control />
       </form.Field>
 
-      <form.Field
-        @name="communityTitle"
-        @title={{i18n "admin.config_areas.about.community_title"}}
-        @description={{i18n "admin.config_areas.about.community_title_help"}}
-        @format="large"
-        as |field|
-      >
-        <field.Input />
-      </form.Field>
+      {{#if @isDefaultLocale}}
+        <form.Field
+          @name="communityTitle"
+          @title={{i18n "admin.config_areas.about.community_title"}}
+          @description={{i18n "admin.config_areas.about.community_title_help"}}
+          @format="large"
+          @type="input"
+          as |field|
+        >
+          <field.Control />
+        </form.Field>
+      {{/if}}
 
-      <form.Field
-        @name="aboutBannerImage"
-        @title={{i18n "admin.config_areas.about.banner_image"}}
-        @helpText={{i18n "admin.config_areas.about.banner_image_help"}}
-        @onSet={{this.setImage}}
-        as |field|
-      >
-        <field.Image @type="site_setting" />
-      </form.Field>
+      {{#if @isDefaultLocale}}
+        <form.Field
+          @name="aboutBannerImage"
+          @title={{i18n "admin.config_areas.about.banner_image"}}
+          @helpText={{i18n "admin.config_areas.about.banner_image_help"}}
+          @onSet={{this.setImage}}
+          @type="image"
+          as |field|
+        >
+          <field.Control @type="site_setting" />
+        </form.Field>
+      {{/if}}
 
       <form.Submit
         @label="admin.config_areas.about.update"

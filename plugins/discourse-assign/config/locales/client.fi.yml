@@ -129,8 +129,6 @@ fi:
       web_hooks:
         assign_event:
           group_name: "Osoitustapahtumat"
-          assigned: "Kun käyttäjä osoittaa ketjun"
-          unassigned: "Kun käyttäjä peruu ketjun osoituksen"
     search:
       advanced:
         in:
@@ -138,10 +136,6 @@ fi:
           unassigned: "ovat osoittamattomia"
         assigned:
           label: "Osoitettu käyttäjälle"
-    topics:
-      bulk:
-        unassign: "Peru ketjujen osoitus"
-        assign: "Osoita ketjut"
     discourse_automation:
       scriptables:
         random_assign:
@@ -190,3 +184,12 @@ fi:
       title: "Muokkaa osoituksia"
       topic: "Ketju"
       post: "Viesti"
+    discourse_workflows:
+      nodes:
+        "trigger:assigned": "Osoitettu"
+      assign_topic:
+        operations:
+          assign: "Osoita"
+          unassign: "Peru osoitus"
+        topic_id: "Ketjun tunnus"
+        assignee: "Osoituksensaaja"

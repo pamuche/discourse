@@ -116,6 +116,61 @@ RSpec.describe StylesheetsController do
     end
   end
 
+  context "when a plugin registers assets for each target" do
+    fab!(:user)
+    fab!(:admin)
+
+    let(:plugin) { plugin_from_fixtures("stylesheet_targets_plugin") }
+
+    matcher :have_stylesheet do |target|
+      match { |body| body.include?(%(data-target="stylesheet_targets_#{target}")) }
+    end
+
+    before do
+      Discourse.plugins << plugin
+      plugin.activate!
+      Stylesheet::Importer.register_imports!
+      StylesheetCache.destroy_all
+    end
+
+    after do
+      Discourse.plugins.delete(plugin)
+      Stylesheet::Importer.register_imports!
+      DiscoursePluginRegistry.reset!
+    end
+
+    it "renders a link tag for every target when viewer is staff" do
+      sign_in(admin)
+      get "/latest"
+
+      expect(response.body).to have_stylesheet(:plugin)
+      expect(response.body).to have_stylesheet(:plugin_mobile)
+      expect(response.body).to have_stylesheet(:plugin_desktop)
+      expect(response.body).to have_stylesheet(:plugin_admin)
+    end
+
+    it "does not render the admin link tag for non-staff users" do
+      sign_in(user)
+      get "/latest"
+
+      expect(response.body).to have_stylesheet(:plugin)
+      expect(response.body).to have_stylesheet(:plugin_mobile)
+      expect(response.body).to have_stylesheet(:plugin_desktop)
+      expect(response.body).not_to have_stylesheet(:plugin_admin)
+    end
+
+    it "does not render any link tags when the plugin is disabled" do
+      plugin.stubs(:enabled?).returns(false)
+      sign_in(admin)
+      get "/latest"
+
+      expect(response.body).not_to have_stylesheet(:plugin)
+      expect(response.body).not_to have_stylesheet(:plugin_mobile)
+      expect(response.body).not_to have_stylesheet(:plugin_desktop)
+      expect(response.body).not_to have_stylesheet(:plugin_admin)
+    end
+  end
+
   it "ignores Accept header and does not include Vary header" do
     StylesheetCache.destroy_all
     manager = Stylesheet::Manager.new(theme_id: nil)
@@ -141,6 +196,30 @@ RSpec.describe StylesheetsController do
   end
 
   describe "#color_scheme" do
+    it "does not use a non-user-selectable theme_id for anonymous users" do
+      scheme = ColorScheme.create_from_base(name: "hidden scheme", colors: [])
+      non_selectable_theme = Fabricate(:theme, user_selectable: false, color_scheme_id: scheme.id)
+
+      get "/color-scheme-stylesheet/-1/#{non_selectable_theme.id}.json"
+
+      expect(response.status).to eq(200)
+      json = JSON.parse(response.body)
+      expect(json["color_scheme_id"]).not_to eq(scheme.id)
+    end
+
+    it "does not use a non-user-selectable theme_id for regular users" do
+      scheme = ColorScheme.create_from_base(name: "hidden scheme", colors: [])
+      non_selectable_theme = Fabricate(:theme, user_selectable: false, color_scheme_id: scheme.id)
+      user = Fabricate(:user)
+      sign_in(user)
+
+      get "/color-scheme-stylesheet/-1/#{non_selectable_theme.id}.json"
+
+      expect(response.status).to eq(200)
+      json = JSON.parse(response.body)
+      expect(json["color_scheme_id"]).not_to eq(scheme.id)
+    end
+
     it "works as expected" do
       scheme = ColorScheme.last
       get "/color-scheme-stylesheet/#{scheme.id}.json"
@@ -158,6 +237,22 @@ RSpec.describe StylesheetsController do
       expect(response.status).to eq(200)
       json = JSON.parse(response.body)
       expect(json["color_scheme_id"]).to eq(scheme.id)
+    end
+
+    it "does not create duplicate cache entries for incorrect theme_ids" do
+      scheme = ColorScheme.create_from_base(name: "test scheme", colors: [])
+      incorrect_theme_id = Theme.maximum(:id).to_i + 100
+
+      Stylesheet::Manager.cache.clear
+      expect(Stylesheet::Manager.cache.hash.size).to eq(0)
+
+      get "/color-scheme-stylesheet/#{scheme.id}/#{incorrect_theme_id}.json"
+      expect(response.status).to eq(200)
+      expect(Stylesheet::Manager.cache.hash.size).to eq(1)
+
+      get "/color-scheme-stylesheet/#{scheme.id}/#{incorrect_theme_id + 1}.json"
+      expect(response.status).to eq(200)
+      expect(Stylesheet::Manager.cache.hash.size).to eq(1)
     end
   end
 end

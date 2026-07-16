@@ -10,6 +10,7 @@ export default class SiteSettingFilter {
   filterSettings(filter, opts = {}) {
     opts.maxResults ??= 100;
     opts.onlyOverridden ??= false;
+    opts.dependsOn ??= null;
 
     return this.performSearch(filter, opts);
   }
@@ -19,6 +20,7 @@ export default class SiteSettingFilter {
     opts.includeAllCategory ??= true;
 
     let pluginFilter;
+    let upcomingChangeDefaultOverrideFilter;
 
     if (filter) {
       filter = filter
@@ -31,6 +33,13 @@ export default class SiteSettingFilter {
 
           if (word.startsWith("plugin:")) {
             pluginFilter = word.slice("plugin:".length).trim();
+            return false;
+          }
+
+          if (word.startsWith("upcoming_change_default_override:")) {
+            upcomingChangeDefaultOverrideFilter = word
+              .slice("upcoming_change_default_override:".length)
+              .trim();
             return false;
           }
 
@@ -57,7 +66,7 @@ export default class SiteSettingFilter {
     this.siteSettings.forEach((settingsCategory) => {
       let fuzzyMatches = [];
 
-      const siteSettings = settingsCategory.siteSettings.filter(
+      const matchedSiteSettings = settingsCategory.siteSettings.filter(
         (siteSetting) => {
           siteSetting.weight = 0;
 
@@ -65,7 +74,22 @@ export default class SiteSettingFilter {
             return false;
           }
 
+          if (opts.dependsOn) {
+            return (
+              siteSetting.get("depends_on") &&
+              siteSetting.get("depends_on").includes(opts.dependsOn)
+            );
+          }
+
           if (pluginFilter && siteSetting.plugin !== pluginFilter) {
+            return false;
+          }
+
+          if (
+            upcomingChangeDefaultOverrideFilter &&
+            siteSetting.get("upcoming_change_default_override_metadata")
+              ?.change_setting_name !== upcomingChangeDefaultOverrideFilter
+          ) {
             return false;
           }
 
@@ -103,6 +127,9 @@ export default class SiteSettingFilter {
           return false;
         }
       );
+      const siteSettings = opts.dependsOn
+        ? matchedSiteSettings
+        : this.displaySettingsFor(matchedSiteSettings);
 
       if (siteSettings.length > 0) {
         matches.push(...siteSettings);
@@ -136,5 +163,50 @@ export default class SiteSettingFilter {
     return settings.sort((a, b) => {
       return (b.weight || 0) - (a.weight || 0);
     });
+  }
+
+  displaySettingsFor(settings) {
+    const displaySettings = [];
+
+    settings.forEach((setting) => {
+      const displaySetting = this.displaySettingFor(setting);
+
+      if (displaySetting !== setting) {
+        displaySetting.weight = Math.max(
+          displaySetting.weight || 0,
+          setting.weight || 0
+        );
+      }
+
+      if (!displaySettings.includes(displaySetting)) {
+        displaySettings.push(displaySetting);
+      }
+    });
+
+    return displaySettings;
+  }
+
+  displaySettingFor(setting) {
+    if (
+      setting.depends_behavior !== "hidden" ||
+      setting.dependent_setting_display !== "inline" ||
+      !setting.depends_on?.length
+    ) {
+      return setting;
+    }
+
+    return this.findSetting(setting.depends_on[0]) || setting;
+  }
+
+  findSetting(name) {
+    for (const settingsCategory of this.siteSettings) {
+      const setting = settingsCategory.siteSettings.find(
+        (siteSetting) => siteSetting.setting === name
+      );
+
+      if (setting) {
+        return setting;
+      }
+    }
   }
 }

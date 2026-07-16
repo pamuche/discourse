@@ -1,12 +1,10 @@
 import Component from "@glimmer/component";
-import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
 import didInsert from "@ember/render-modifiers/modifiers/did-insert";
 import willDestroy from "@ember/render-modifiers/modifiers/will-destroy";
 import { service } from "@ember/service";
-import { htmlSafe } from "@ember/template";
 import getURL from "discourse/lib/get-url";
-import { escapeExpression } from "discourse/lib/utilities";
+import { excerpt } from "discourse/lib/text";
 import { colorToHex, contrastColor, stringToColor } from "../lib/colors";
 import FullCalendar from "./full-calendar";
 
@@ -14,8 +12,6 @@ export default class PostCalendar extends Component {
   @service siteSettings;
   @service capabilities;
   @service postCalendar;
-
-  @tracked post = this.args.post;
 
   @action
   registerPostCalendar() {
@@ -52,7 +48,7 @@ export default class PostCalendar extends Component {
     const events = [];
     const groupedEvents = [];
 
-    (this.post.calendar_details || []).forEach((detail) => {
+    (this.args.post.calendar_details || []).forEach((detail) => {
       switch (detail.type) {
         case "grouped":
           if (this.isFullDay && detail.timezone) {
@@ -266,11 +262,7 @@ export default class PostCalendar extends Component {
       event.textColor = contrastColor(color);
     }
 
-    let popupText = detail.message.slice(0, 100);
-    if (detail.message.length > 100) {
-      popupText += "…";
-    }
-    event.extendedProps.htmlContent = htmlSafe(escapeExpression(popupText));
+    event.extendedProps.htmlContent = excerpt(detail.message, 100);
     event.title = event.title.replace(/<img[^>]*>/g, "");
     event.participantCount = 1;
 
@@ -303,7 +295,7 @@ export default class PostCalendar extends Component {
         @rightHeaderToolbar="timeGridDay,timeGridWeek,dayGridMonth,listYear"
         @onLoadEvents={{this.loadEvents}}
         @height={{@height}}
-        @refreshKey={{this.post.id}}
+        @refreshKey={{@post.id}}
       />
     </div>
   </template>

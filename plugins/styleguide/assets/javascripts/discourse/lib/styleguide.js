@@ -19,6 +19,7 @@ import multiselect from "../components/sections/molecules/multi-select";
 import navigationBar from "../components/sections/molecules/navigation-bar";
 import navigationStacked from "../components/sections/molecules/navigation-stacked";
 import postMenu from "../components/sections/molecules/post-menu";
+import segmentedControl from "../components/sections/molecules/segmented-control";
 import signupCta from "../components/sections/molecules/signup-cta";
 import toasts from "../components/sections/molecules/toasts";
 import tooltips from "../components/sections/molecules/tooltips";
@@ -27,11 +28,13 @@ import topicNotifications from "../components/sections/molecules/topic-notificat
 import topicTimerInfo from "../components/sections/molecules/topic-timer-info";
 import post from "../components/sections/organisms/00-post";
 import postList from "../components/sections/organisms/01-post-list";
-import topicMap from "../components/sections/organisms/02-topic-map";
-import topicFooterButtons from "../components/sections/organisms/03-topic-footer-buttons";
-import topicList from "../components/sections/organisms/04-topic-list";
+import postOneboxes from "../components/sections/organisms/02-post-oneboxes";
+import topicMap from "../components/sections/organisms/03-topic-map";
+import topicFooterButtons from "../components/sections/organisms/04-topic-footer-buttons";
+import topicList from "../components/sections/organisms/05-topic-list";
 import basicTopicList from "../components/sections/organisms/basic-topic-list";
 import categoriesList from "../components/sections/organisms/categories-list";
+import dockedComposer from "../components/sections/organisms/docked-composer";
 import modal from "../components/sections/organisms/modal";
 import moreTopics from "../components/sections/organisms/more-topics";
 import navigation from "../components/sections/organisms/navigation";
@@ -61,6 +64,11 @@ const SECTIONS = [
   { component: dateTimeInputs, category: "atoms", id: "date-time-inputs" },
   { component: dropdowns, category: "atoms", id: "dropdowns" },
   { component: topicLink, category: "atoms", id: "topic-link" },
+  {
+    component: segmentedControl,
+    category: "atoms",
+    id: "segmented-control",
+  },
   { component: breadCrumbs, category: "molecules", id: "bread-crumbs" },
   { component: categories, category: "molecules", id: "categories" },
   { component: charCounter, category: "molecules", id: "char-counter" },
@@ -87,21 +95,28 @@ const SECTIONS = [
   { component: topicTimerInfo, category: "molecules", id: "topic-timer-info" },
   { component: post, category: "organisms", id: "post", priority: 0 },
   { component: postList, category: "organisms", id: "post-list", priority: 1 },
-  { component: topicMap, category: "organisms", id: "topic-map", priority: 2 },
+  {
+    component: postOneboxes,
+    category: "organisms",
+    id: "post-oneboxes",
+    priority: 2,
+  },
+  { component: topicMap, category: "organisms", id: "topic-map", priority: 3 },
   {
     component: topicFooterButtons,
     category: "organisms",
     id: "topic-footer-buttons",
-    priority: 3,
+    priority: 4,
   },
   {
     component: topicList,
     category: "organisms",
     id: "topic-list",
-    priority: 4,
+    priority: 5,
   },
   { component: basicTopicList, category: "organisms", id: "basic-topic-list" },
   { component: categoriesList, category: "organisms", id: "categories-list" },
+  { component: dockedComposer, category: "organisms", id: "docked-composer" },
   { component: modal, category: "organisms", id: "modal" },
   { component: navigation, category: "organisms", id: "navigation" },
   { component: siteHeader, category: "organisms", id: "site-header" },

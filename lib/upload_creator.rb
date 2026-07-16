@@ -5,6 +5,17 @@ require "fastimage"
 class UploadCreator
   TYPES_TO_CROP = %w[avatar card_background custom_emoji profile_background].each(&:freeze)
 
+  ADMIN_ASSET_TYPES = %w[
+    badge_image
+    branding
+    custom_emoji
+    category_background
+    category_background_dark
+    category_logo
+    category_logo_dark
+    group_flair
+  ].each(&:freeze)
+
   ALLOWED_SVG_ELEMENTS = %w[
     circle
     clipPath
@@ -64,7 +75,9 @@ class UploadCreator
 
     @image_info =
       begin
-        FastImage.new(@file)
+        image = FastImage.new(@file)
+        image.type # eager load to rescue errors early
+        image
       rescue StandardError
         nil
       end
@@ -167,7 +180,7 @@ class UploadCreator
       @upload.filesize = filesize
       @upload.sha1 =
         (
-          if (SiteSetting.secure_uploads? || external_upload_too_big || is_thumbnail)
+          if SiteSetting.secure_uploads? || external_upload_too_big || is_thumbnail
             unique_hash
           else
             sha1
@@ -289,7 +302,9 @@ class UploadCreator
   def extract_image_info!
     @image_info =
       begin
-        FastImage.new(@file)
+        image = FastImage.new(@file)
+        image.type # eager load to rescue errors early
+        image
       rescue StandardError
         nil
       end
@@ -317,8 +332,8 @@ class UploadCreator
 
   def convert_png_to_jpeg?
     return false unless @image_info.type == :png
-    return true if @opts[:pasted]
     return false if SiteSetting.ImageQuality.png_to_jpg_quality == 100
+    return true if @opts[:pasted]
     pixels > MIN_PIXELS_TO_CONVERT_TO_JPEG
   end
 
@@ -353,7 +368,8 @@ class UploadCreator
   end
 
   def convert_to_jpeg!
-    return if @opts[:for_site_setting]
+    return if @opts[:type] == "topic_og_image"
+    return if @opts[:for_site_setting] || ADMIN_ASSET_TYPES.include?(@opts[:type])
     return if filesize < MIN_CONVERT_TO_JPEG_BYTES_SAVED
 
     jpeg_tempfile = Tempfile.new(%w[image .jpg])
@@ -483,6 +499,7 @@ class UploadCreator
         I18n.t(
           "upload.images.larger_than_x_megapixels",
           max_image_megapixels: SiteSetting.max_image_megapixels,
+          original_filename: @upload.original_filename,
         ),
       )
       true
@@ -502,8 +519,11 @@ class UploadCreator
 
   def clean_svg!
     doc = Nokogiri.XML(@file)
+    doc.internal_subset&.remove
+    doc.external_subset&.remove
     doc.xpath(svg_allowlist_xpath).remove
     doc.xpath("//@*[starts-with(name(), 'on')]").remove
+    doc.traverse { |node| node.remove if node.type == Nokogiri::XML::Node::ENTITY_REF_NODE }
     doc
       .css("use")
       .each do |use_el|
@@ -512,6 +532,7 @@ class UploadCreator
         end
         use_el.remove_attribute("xlink:href")
       end
+
     File.write(@file.path, doc.to_s)
     @file.rewind
   end
@@ -647,6 +668,7 @@ class UploadCreator
     @upload.for_theme = true if @opts[:for_theme]
     @upload.for_export = true if @opts[:for_export]
     @upload.for_site_setting = true if @opts[:for_site_setting]
+    @upload.site_setting_name = @opts[:site_setting_name] if @opts[:site_setting_name]
     @upload.for_gravatar = true if @opts[:for_gravatar]
   end
 

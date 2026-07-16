@@ -129,8 +129,6 @@ sk:
       web_hooks:
         assign_event:
           group_name: "Priradenie udalostí"
-          assigned: "Keď používateľ priradí tému"
-          unassigned: "Keď používateľ zruší priradenie témy"
     search:
       advanced:
         in:
@@ -138,10 +136,6 @@ sk:
           unassigned: "sú nepriradené"
         assigned:
           label: "Priradené k"
-    topics:
-      bulk:
-        unassign: "Zrušenie priradenia tém"
-        assign: "Priradenie tém"
     discourse_automation:
       scriptables:
         random_assign:
@@ -194,3 +188,12 @@ sk:
       title: "Úprava priradení"
       topic: "Téma"
       post: "Príspevok"
+    discourse_workflows:
+      nodes:
+        "trigger:assigned": "Priradené"
+      assign_topic:
+        operations:
+          assign: "Priradiť"
+          unassign: "Nepriradené"
+        topic_id: "ID témy"
+        assignee: "Príjemca"

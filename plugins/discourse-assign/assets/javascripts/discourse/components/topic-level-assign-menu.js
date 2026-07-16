@@ -1,16 +1,22 @@
 import { getOwner } from "@ember/owner";
-import { htmlSafe } from "@ember/template";
-import { renderAvatar } from "discourse/helpers/user-avatar";
+import { trustHTML } from "@ember/template";
 import { iconHTML } from "discourse/lib/icon-library";
+import { escapeExpression } from "discourse/lib/utilities";
+import { renderAvatar } from "discourse/ui-kit/helpers/d-user-avatar";
 import { i18n } from "discourse-i18n";
 import EditTopicAssignments from "../components/modal/edit-topic-assignments";
 
 const DEPENDENT_KEYS = [
   "topic.assigned_to_user",
   "topic.assigned_to_group",
+  "topic.can_assign",
   "currentUser.can_assign",
   "topic.assigned_to_user.username",
 ];
+
+function canAssignTopic(context) {
+  return context.topic?.can_assign ?? context.currentUser?.can_assign;
+}
 
 export default {
   id: "reassign",
@@ -18,7 +24,7 @@ export default {
   classNames: ["reassign"],
 
   async action(id) {
-    if (!this.currentUser?.can_assign) {
+    if (!canAssignTopic(this)) {
       return;
     }
 
@@ -94,7 +100,7 @@ export default {
 
   displayed() {
     return (
-      this.currentUser?.can_assign &&
+      canAssignTopic(this) &&
       this.site.desktopView &&
       (this.topic.isAssigned() || this.topic.hasAssignedPosts())
     );
@@ -120,8 +126,8 @@ function editAssignmentsButton() {
   const label = i18n("discourse_assign.topic_level_menu.edit_assignments");
   return {
     id: "reassign",
-    name: htmlSafe(label),
-    label: htmlSafe(`${icon} ${label}`),
+    name: trustHTML(label),
+    label: trustHTML(`${icon} ${label}`),
   };
 }
 
@@ -130,8 +136,8 @@ function reassignToSelfButton() {
   const label = i18n("discourse_assign.topic_level_menu.reassign_topic_to_me");
   return {
     id: "reassign-self",
-    name: htmlSafe(label),
-    label: htmlSafe(`${icon} ${label}`),
+    name: trustHTML(label),
+    label: trustHTML(`${icon} ${label}`),
   };
 }
 
@@ -147,13 +153,13 @@ function unassignFromTopicButton(topic, prioritize_full_name_in_ux) {
     ? avatarHtml(topic.assigned_to_user, "small")
     : iconHTML("user-xmark");
   const label = i18n("discourse_assign.topic_level_menu.unassign_from_topic", {
-    username,
+    username: escapeExpression(username),
   });
 
   return {
     id: "unassign",
-    name: htmlSafe(label),
-    label: htmlSafe(`${icon} ${label}`),
+    name: trustHTML(label),
+    label: trustHTML(`${icon} ${label}`),
   };
 }
 
@@ -179,21 +185,22 @@ function unassignFromPostButton(postId, assignment) {
     icon = iconHTML("group-times");
   }
 
+  const escapedAssignee = escapeExpression(assignee);
   const label = i18n("discourse_assign.topic_level_menu.unassign_from_post", {
-    assignee,
+    assignee: escapedAssignee,
     post_number: assignment.post_number,
   });
   const dataName = i18n(
     "discourse_assign.topic_level_menu.unassign_from_post_help",
     {
-      assignee,
+      assignee: escapedAssignee,
       post_number: assignment.post_number,
     }
   );
   return {
     id: `unassign-from-post-${postId}`,
-    name: htmlSafe(dataName),
-    label: htmlSafe(`${icon} ${label}`),
+    name: trustHTML(dataName),
+    label: trustHTML(`${icon} ${label}`),
   };
 }
 
@@ -205,10 +212,10 @@ function topicLevelUnassignButton(assignees) {
 
   return {
     id: null,
-    name: htmlSafe(
+    name: trustHTML(
       i18n("discourse_assign.topic_level_menu.unassign_with_ellipsis")
     ),
-    label: htmlSafe(`${avatars}${label}`),
+    label: trustHTML(`${avatars}${label}`),
   };
 }
 

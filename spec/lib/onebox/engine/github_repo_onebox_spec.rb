@@ -46,9 +46,9 @@ RSpec.describe Onebox::Engine::GithubRepoOnebox do
 
     context "when the repo has no description" do
       let(:response) do
-        resp = onebox_response(described_class.onebox_name)
+        resp = MultiJson.load(onebox_response(described_class.onebox_name))
         resp["description"] = ""
-        resp
+        MultiJson.dump(resp)
       end
 
       it "includes a message about contributing to the repo" do
@@ -66,6 +66,19 @@ RSpec.describe Onebox::Engine::GithubRepoOnebox do
         headers: {
           "Authorization" => "Bearer github_pat_1234",
         },
+      )
+    end
+  end
+
+  describe "#inline_data" do
+    it "returns nil when no access token is configured" do
+      expect(described_class.new(gh_link).inline_data).to be_nil
+    end
+
+    it "returns the repo title from the API when an access token is configured" do
+      SiteSetting.github_onebox_access_tokens = "discourse|github_pat_1234"
+      expect(described_class.new(gh_link).inline_data).to eq(
+        title: "GitHub - discourse/discourse - A platform for community discussion. Free, open,...",
       )
     end
   end

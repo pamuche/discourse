@@ -34,7 +34,7 @@ function initCategoriesWithParentCategory(context) {
   });
 }
 
-module("Integration | Component | select-kit/category-drop", function (hooks) {
+module("Integration | Component | SelectKit | CategoryDrop", function (hooks) {
   setupRenderingTest(hooks);
 
   hooks.beforeEach(function () {
@@ -49,7 +49,7 @@ module("Integration | Component | select-kit/category-drop", function (hooks) {
     );
 
     assert
-      .dom(".d-icon-caret-right", this.subject.header().el())
+      .dom(".d-icon-angle-right", this.subject.header().el())
       .exists("uses the correct default icon");
   });
 

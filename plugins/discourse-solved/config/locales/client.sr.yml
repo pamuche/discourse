@@ -5,6 +5,20 @@
 # https://translate.discourse.org/
 
 sr:
+  admin_js:
+    admin:
+      dashboard:
+        sections:
+          support:
+            filter:
+              all_categories: "Sve kategorije"
+            answerers:
+              staff: "Osoblje"
+              member: "Članovi"
+              basic: "Osnovno"
+            response_time:
+              buckets:
+                gt_24h: "> 24 sata"
   js:
     notifications:
       alt:
@@ -14,6 +28,8 @@ sr:
       accepted_answer_post_number: "poruka %{post_number}"
       topic_status_filter:
         all: "sve"
+      move_post_cancel: "Odustani"
+      confirm_solved_removal_cancel: "Odustani"
     discourse_automation:
       triggerables:
         first_accepted_solution:

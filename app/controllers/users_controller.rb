@@ -30,6 +30,7 @@ class UsersController < ApplicationController
                    register_passkey
                    rename_passkey
                    delete_passkey
+                   update_security_key
                    feature_topic
                    clear_featured_topic
                    bookmarks
@@ -40,6 +41,12 @@ class UsersController < ApplicationController
                    reset_recent_searches
                    user_menu_bookmarks
                    user_menu_messages
+                   update_primary_email
+                   destroy_email
+                   badge_title
+                   remove_password
+                   private_message_topic_tracking_state
+                   toggle_anon
                  ]
 
   skip_before_action :check_xhr,
@@ -77,8 +84,8 @@ class UsersController < ApplicationController
                   create_second_factor_security_key
                   register_passkey
                   delete_passkey
+                  update_security_key
                 ]
-
   before_action :respond_to_suspicious_request, only: [:create]
 
   # we need to allow account creation with bad CSRF tokens, if people are caching, the CSRF token on the
@@ -105,7 +112,7 @@ class UsersController < ApplicationController
                      ]
   skip_before_action :redirect_to_profile_if_required, only: %i[show staff_info update]
 
-  before_action :add_noindex_header, only: %i[show my_redirect]
+  before_action :add_noindex_header, only: %i[show summary my_redirect]
 
   allow_in_readonly_mode :admin_login
   allow_in_staff_writes_only_mode :email_login, :password_reset_update
@@ -264,6 +271,11 @@ class UsersController < ApplicationController
 
   def username
     params.require(:new_username)
+
+    # Fast fail for usernames exceeding hardcoded max length
+    if params[:new_username].length > UsernameValidator::MAX_CHARS * 3
+      return render_json_error(I18n.t("user.username.long", count: SiteSetting.max_username_length))
+    end
 
     if clashing_with_existing_route?(params[:new_username]) ||
          (User.reserved_username?(params[:new_username]) && !current_user.admin?)
@@ -481,7 +493,7 @@ class UsersController < ApplicationController
   end
 
   def my_redirect
-    raise Discourse::NotFound if params[:path] !~ %r{\A[a-zA-Z_\-/]+\z}
+    raise Discourse::NotFound if params[:path] !~ %r{\A[a-zA-Z0-9_\-/]+\z}
 
     if current_user.blank?
       cookies[:destination_url] = path("/my/#{params[:path]}")
@@ -504,8 +516,6 @@ class UsersController < ApplicationController
           current_user.try(:staff?) || (current_user && SiteSetting.show_inactive_accounts),
       )
     raise Discourse::NotFound unless guardian.can_see_profile?(@user)
-
-    response.headers["X-Robots-Tag"] = "noindex"
 
     respond_to do |format|
       format.html do
@@ -533,12 +543,13 @@ class UsersController < ApplicationController
         fetch_user_from_params(
           include_inactive: current_user.staff? || SiteSetting.show_inactive_accounts,
         )
+      can_see_invite_details = guardian.can_see_invite_details?(inviter)
 
       invites =
-        if filter == "pending" && guardian.can_see_invite_details?(inviter)
+        if filter == "pending" && can_see_invite_details
           Invite.includes(:topics, :groups).pending(inviter)
-        elsif filter == "expired"
-          Invite.expired(inviter)
+        elsif filter == "expired" && can_see_invite_details
+          Invite.includes(:topics, :groups).expired(inviter)
         elsif filter == "redeemed"
           Invite.redeemed_users(inviter)
         else
@@ -555,8 +566,8 @@ class UsersController < ApplicationController
         invites = invites.where(filter_sql, filter: "%#{params[:search].downcase}%")
       end
 
-      pending_count = Invite.pending(inviter).reorder(nil).count.to_i
-      expired_count = Invite.expired(inviter).reorder(nil).count.to_i
+      pending_count = can_see_invite_details ? Invite.pending(inviter).reorder(nil).count.to_i : 0
+      expired_count = can_see_invite_details ? Invite.expired(inviter).reorder(nil).count.to_i : 0
       redeemed_count = Invite.redeemed_users(inviter).reorder(nil).count.to_i
 
       render json:
@@ -595,7 +606,7 @@ class UsersController < ApplicationController
   end
 
   def changing_case_of_own_username(target_user, username)
-    target_user && username.downcase == (target_user.username.downcase)
+    target_user && username.downcase == target_user.username.downcase
   end
 
   # Used for checking availability of a username and will return suggestions
@@ -671,6 +682,15 @@ class UsersController < ApplicationController
       return fail_with("login.password_too_long")
     end
 
+    if params[:username].length > UsernameValidator::MAX_CHARS * 3
+      message =
+        User.new.errors.full_message(
+          :username,
+          I18n.t("user.username.long", count: SiteSetting.max_username_length),
+        )
+      return render json: { success: false, message: message }
+    end
+
     return fail_with("login.email_too_long") if params[:email].length > 254 + 1 + 253
 
     if SiteSetting.require_invite_code &&
@@ -685,7 +705,12 @@ class UsersController < ApplicationController
 
     params[:locale] ||= I18n.locale unless current_user
 
-    new_user_params = user_params.except(:timezone)
+    new_user_params =
+      if current_user&.admin? && is_api?
+        user_params.except(:timezone)
+      else
+        user_params.except(:timezone, :title, :primary_group_id, :flair_group_id)
+      end
 
     user = User.where(staged: true).with_email(new_user_params[:email].strip.downcase).first
 
@@ -706,11 +731,11 @@ class UsersController < ApplicationController
     # Handle custom fields
     user_fields = UserField.all
     if user_fields.present?
-      field_params = params[:user_fields] || {}
       fields = user.custom_fields
 
       user_fields.each do |f|
-        field_val = field_params[f.id.to_s]
+        field_val = clean_custom_field_values(f)
+        field_val = nil if field_val == "false"
         if field_val.blank?
           return fail_with("login.missing_user_field") if f.required?
         else
@@ -928,6 +953,7 @@ class UsersController < ApplicationController
             action: UserHistory.actions[:change_password],
           )
 
+          reset_csrf_token(request)
           logon_after_password_reset
         end
       end
@@ -987,7 +1013,7 @@ class UsersController < ApplicationController
     message =
       if Guardian.new(@user).can_access_forum?
         # Log in the user
-        log_on_user(@user)
+        log_on_user(@user, replay_anonymous_action: true)
         "password_reset.success"
       else
         @requires_approval = true
@@ -1127,7 +1153,7 @@ class UsersController < ApplicationController
       # Log in the user unless they need to be approved
       if Guardian.new(@user).can_access_forum?
         @user.enqueue_welcome_message("welcome_user") if @user.send_welcome_message
-        log_on_user(@user)
+        log_on_user(@user, replay_anonymous_action: true)
 
         # invites#perform_accept_invitation already sets destination_url, but
         # sometimes it is lost (user changes browser, uses incognito, etc)
@@ -1273,7 +1299,12 @@ class UsersController < ApplicationController
       if usernames.blank?
         UserSearch.new(term, options).search
       else
-        User.where(username_lower: usernames).includes(:user_option).limit(limit)
+        UserSearch
+          .new(term, options)
+          .scoped_users
+          .where(username_lower: usernames)
+          .includes(:user_option)
+          .limit(limit)
       end
     to_render = serialize_found_users(results)
 
@@ -1525,7 +1556,7 @@ class UsersController < ApplicationController
 
     %W[
       number_of_deleted_posts
-      number_of_flagged_posts
+      number_of_flags
       number_of_flags_given
       number_of_silencings
       number_of_suspensions
@@ -1896,7 +1927,7 @@ class UsersController < ApplicationController
 
   def bookmarks
     user = fetch_user_from_params
-    guardian.ensure_can_edit!(user)
+    guardian.ensure_can_see_bookmarks!(user)
     user_guardian = Guardian.new(user)
 
     respond_to do |format|
@@ -1922,12 +1953,21 @@ class UsersController < ApplicationController
         end
       end
       format.ics do
+        @calendar_name =
+          I18n.t("calendar_subscriptions.bookmarks_feed_name", site_title: SiteSetting.title)
+
+        bookmark_query = Bookmark.with_reminders.where(user_id: user.id)
+
+        after_param = params[:after].presence || 3.months.ago.iso8601
+        after_date = after_param == "now" ? Time.current : after_param.to_datetime
+        bookmark_query = bookmark_query.where("reminder_at >= ?", after_date)
+
         @bookmark_reminders =
-          Bookmark
-            .with_reminders
-            .where(user_id: user.id)
+          bookmark_query
             .order(:reminder_at)
-            .map do |bookmark|
+            .filter_map do |bookmark|
+              next if !bookmark.registered_bookmarkable.can_see?(user_guardian, bookmark)
+
               bookmark.registered_bookmarkable.serializer.new(
                 bookmark,
                 scope: user_guardian,
@@ -2007,6 +2047,8 @@ class UsersController < ApplicationController
           ],
         )
         .to_a
+    unread_notifications =
+      Notification.filter_inaccessible_topic_notifications(guardian, unread_notifications)
 
     if unread_notifications.size < USER_MENU_LIST_LIMIT
       exclude_topic_ids = unread_notifications.filter_map(&:topic_id).uniq
@@ -2031,6 +2073,8 @@ class UsersController < ApplicationController
           .for_user_menu(current_user.id, limit: limit)
           .where(read: true, notification_type: Notification.types[:group_message_summary])
           .to_a
+      read_notifications =
+        Notification.filter_inaccessible_topic_notifications(guardian, read_notifications)
     end
 
     if unread_notifications.present?
@@ -2085,7 +2129,7 @@ class UsersController < ApplicationController
   end
 
   def clean_custom_field_values(field)
-    field_values = params[:user_fields][field.id.to_s]
+    field_values = params.dig(:user_fields, field.id.to_s)
 
     return field_values if field_values.nil? || field_values.empty?
 
@@ -2227,12 +2271,10 @@ class UsersController < ApplicationController
     allowed_actions = %w[show update destroy]
 
     http_verbs.any? do |verb|
-      begin
-        path = Rails.application.routes.recognize_path("/u/#{normalized_username}", method: verb)
-        allowed_actions.exclude?(path[:action])
-      rescue ActionController::RoutingError
-        false
-      end
+      path = Rails.application.routes.recognize_path("/u/#{normalized_username}", method: verb)
+      allowed_actions.exclude?(path[:action])
+    rescue ActionController::RoutingError
+      false
     end
   end
 

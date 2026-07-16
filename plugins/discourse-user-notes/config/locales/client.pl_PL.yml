@@ -9,10 +9,10 @@ pl_PL:
     user_notes:
       title: "Uwagi o użytkowniku"
       attach: "Dodaj uwagę o użytkowniku"
-      attach_note_description: "Dodaj uwagę o tym użytkowniku. Ta uwaga będzie widoczna tylko dla personelu."
+      attach_note_description: "dodaj notatkę o tym użytkowniku, którą może zobaczyć tylko personel"
       remove: "Usuń uwagę o użytkowniku"
       show: "Uwagi o użytkowniku (%{count})"
       delete_confirm: "Czy na pewno chcesz usunąć tę uwagę o użytkowniku?"
       show_post: "Pokaż wpis"
       show_flag: "Pokaż flagę"
-      copy_reviewable_note: "Skopiować uwagę do profilu %{username}?"
+      copy_reviewable_note: "Skopiować notatkę do „Notatki użytkownika” w profilu %{username}?"

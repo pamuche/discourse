@@ -23,8 +23,8 @@
   background-color: transparent;
 }
 
-.admin-report .main .report-alert.no-data,
-.admin-report .main .report-alert.rate-limited {
+.admin-report .chart__body .report-alert.no-data,
+.admin-report .chart__body .report-alert.rate-limited {
   background-color: var(--d-content-background);
 }
 
@@ -100,6 +100,10 @@ input[type="color"]:focus,
 
 .period-chooser-header {
   border-radius: 0;
+}
+
+.upcoming-change__badge-info {
+  padding-right: var(--space-2);
 }
 
 // compatibility with the top contributors sidebar theme component

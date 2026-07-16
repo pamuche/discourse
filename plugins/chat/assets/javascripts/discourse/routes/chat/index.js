@@ -6,13 +6,14 @@ export default class ChatIndexRoute extends DiscourseRoute {
   @service chatChannelsManager;
   @service router;
   @service siteSettings;
+  @service currentUser;
 
   get hasThreads() {
     if (!this.siteSettings.chat_threads_enabled) {
       return false;
     }
 
-    return this.chatChannelsManager.hasThreadedChannels;
+    return this.chatChannelsManager.shouldShowMyThreads;
   }
 
   get hasDirectMessages() {
@@ -51,6 +52,10 @@ export default class ChatIndexRoute extends DiscourseRoute {
     if (!this.isPublicChannelsEnabled && this.hasDirectMessages) {
       return this.router.replaceWith("chat.direct-messages");
     }
+    if (!this.currentUser && this.isPublicChannelsEnabled) {
+      return this.router.replaceWith("chat.channels");
+    }
+
     return this.router.replaceWith("chat.browse.open");
   }
 }

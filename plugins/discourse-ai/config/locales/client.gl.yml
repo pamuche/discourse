@@ -36,8 +36,17 @@ gl:
             canned_reply:
               label: "Responder"
     discourse_ai:
+      ai_tool_approval:
+        loading: "Cargando..."
+        tool: "Acción"
+        user: "Usuario"
+        approve: "Aprobar"
+        reject: "Rexeitar"
+        approved: "Aprobado"
+        rejected: "Rexeitada"
+      llm_selector:
+        none: "Ningunha"
       features:
-        back: "Volver"
         disabled: "(desactivado)"
         groups: "Grupos:"
         no_groups: "Ningunha"
@@ -45,17 +54,23 @@ gl:
         expand_list:
           one: "(%{count} máis)"
           other: "(%{count} máis)"
+        nav:
+          enabled: "Activado"
         filters:
           all: "Todas"
           reset: "Restabelecer"
         search:
           name: "Buscar"
+        image_caption:
+          setting_groups:
+            settings: "Configuración"
         spam:
           name: "Lixo"
       modals:
         select_option: "Seleccione unha opción..."
       translations:
         title: "Traducións"
+        category_scope: "Categorías"
         stats:
           eta_minutes:
             one: "%{count} minuto"
@@ -82,8 +97,7 @@ gl:
         total: "Total"
         periods:
           custom: "Personalizar..."
-      ai_persona:
-        back: "Volver"
+      ai_agent:
         name: "Nome"
         edit: "Editar"
         export: "Exportar"
@@ -94,6 +108,12 @@ gl:
         enabled: "Activado?"
         allowed_groups: "Grupos permitidos"
         delete: "Eliminar"
+        thinking_effort_options:
+          none: "Ningunha"
+          low: "Baixa"
+          medium: "Media"
+          high: "Alta"
+          max: "Máx"
         response_format:
           open_modal: "Editar"
           modal:
@@ -105,7 +125,6 @@ gl:
           title: "Cargas"
           uploading: "Cargando..."
       tools:
-        back: "Volver"
         export: "Exportar"
         import: "Importar"
         name: "Nome"
@@ -115,13 +134,34 @@ gl:
         remove_parameter: "Retirar"
         parameter_required: "Obrigatorio"
         edit: "Editar"
+        test: "Proba"
         delete: "Eliminar"
+      secrets:
+        short_title: "Acreditacións"
+        name: "Nome"
+        secret: "Valor"
+        save: "Gardar"
+        edit: "Editar"
+        delete: "Eliminar"
+        embedding: "Incorporando"
+      mcp_servers:
+        name: "Nome"
+        description: "Descrición"
+        url: "URL"
+        oauth_statuses:
+          connected: "Conectadas"
+        oauth_connect: "Conectar"
+        enabled: "Activado"
+        save: "Gardar"
+        edit: "Editar"
+        delete: "Eliminar"
+        tools_modal:
+          required: "Obrigatorio"
       llms:
         display_name: "Nome"
         provider: "Fornecedor"
         save: "Gardar"
         edit: "Editar"
-        back: "Volver"
         delete: Eliminar
         quotas:
           group: "Grupo"
@@ -153,10 +193,7 @@ gl:
           cancel: "Cancelar"
         thumbnail_suggestions:
           try_again: "Tentar de novo"
-        image_caption:
-          save_caption: "Gardar"
       embeddings:
-        back: "Volver"
         save: "Gardar"
         delete: "Eliminar"
         edit: "Editar"

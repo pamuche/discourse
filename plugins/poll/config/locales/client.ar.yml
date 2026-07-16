@@ -12,6 +12,9 @@ ar:
           poll: "استطلاع رأي Discourse"
   js:
     poll:
+      title: "استطلاع رأي"
+      dynamic:
+        enabled_hint: "يمكن إضافة الخيارات أو إزالتها."
       voters:
         zero: "ناخب"
         one: "ناخب واحد"
@@ -180,6 +183,8 @@ ar:
           step: المسافة
         poll_public:
           label: عرض أسماء المصوِّتين
+        poll_dynamic:
+          label: السماح بإضافة الخيارات أو إزالتها بعد النشر.
         poll_title:
           label: العنوان (اختياري)
         poll_options:
@@ -187,5 +192,3 @@ ar:
           add: إضافة خيار
         automatic_close:
           label: إغلاق الاستطلاع تلقائيًا
-        show_advanced: "إظهار الخيارات المتقدمة"
-        hide_advanced: "إخفاء الخيارات المتقدمة"

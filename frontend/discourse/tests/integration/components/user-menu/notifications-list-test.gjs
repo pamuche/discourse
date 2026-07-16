@@ -1,4 +1,4 @@
-import { click, render } from "@ember/test-helpers";
+import { click, findAll, render, settled } from "@ember/test-helpers";
 import { module, test } from "qunit";
 import NotificationsList from "discourse/components/user-menu/notifications-list";
 import { cloneJSON } from "discourse/lib/object";
@@ -6,7 +6,6 @@ import { NOTIFICATION_TYPES } from "discourse/tests/fixtures/concerns/notificati
 import NotificationFixtures from "discourse/tests/fixtures/notification-fixtures";
 import { setupRenderingTest } from "discourse/tests/helpers/component-test";
 import pretender, { response } from "discourse/tests/helpers/create-pretender";
-import { queryAll } from "discourse/tests/helpers/qunit-helpers";
 import { i18n } from "discourse-i18n";
 
 function getNotificationsData() {
@@ -14,7 +13,7 @@ function getNotificationsData() {
 }
 
 module(
-  "Integration | Component | user-menu | notifications-list",
+  "Integration | Component | UserMenu | NotificationsList",
   function (hooks) {
     setupRenderingTest(hooks);
 
@@ -119,6 +118,18 @@ module(
         .doesNotExist("dismiss button is not shown");
     });
 
+    test("refreshes the list when notifications:changed appEvent is triggered", async function (assert) {
+      await render(<template><NotificationsList /></template>);
+      assert.strictEqual(notificationsFetches, 1);
+      this.owner.lookup("service:app-events").trigger("notifications:changed");
+      await settled();
+      assert.strictEqual(
+        notificationsFetches,
+        2,
+        "notifications list is re-fetched"
+      );
+    });
+
     test("all notifications tab shows pending reviewables and sorts them with unread notifications based on their creation date", async function (assert) {
       pretender.get("/notifications", () => {
         return response({
@@ -205,7 +216,7 @@ module(
         });
       });
       await render(<template><NotificationsList /></template>);
-      const items = queryAll("ul li");
+      const items = findAll("ul li");
       assert
         .dom(items[0])
         .includesText(

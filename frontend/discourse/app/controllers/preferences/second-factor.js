@@ -1,6 +1,5 @@
 import Controller from "@ember/controller";
-import { action } from "@ember/object";
-import { alias } from "@ember/object/computed";
+import { action, computed, set } from "@ember/object";
 import { service } from "@ember/service";
 import ConfirmSession from "discourse/components/dialog-messages/confirm-session";
 import SecondFactorConfirmPhrase from "discourse/components/dialog-messages/second-factor-confirm-phrase";
@@ -10,8 +9,8 @@ import SecondFactorBackupEdit from "discourse/components/modal/second-factor-bac
 import SecondFactorEdit from "discourse/components/modal/second-factor-edit";
 import SecondFactorEditSecurityKey from "discourse/components/modal/second-factor-edit-security-key";
 import { popupAjaxError } from "discourse/lib/ajax-error";
-import discourseComputed from "discourse/lib/decorators";
 import DiscourseURL, { userPath } from "discourse/lib/url";
+import { escapeExpression } from "discourse/lib/utilities";
 import { findAll } from "discourse/models/login-method";
 import { SECOND_FACTOR_METHODS } from "discourse/models/user";
 import { i18n } from "discourse-i18n";
@@ -26,50 +25,57 @@ export default class SecondFactorController extends Controller {
   errorMessage = null;
   newUsername = null;
 
-  @alias("model.second_factor_backup_enabled") backupEnabled;
-
   secondFactorMethod = SECOND_FACTOR_METHODS.TOTP;
   totps = [];
   security_keys = [];
+
+  @computed("model.second_factor_backup_enabled")
+  get backupEnabled() {
+    return this.model?.second_factor_backup_enabled;
+  }
+
+  set backupEnabled(value) {
+    set(this, "model.second_factor_backup_enabled", value);
+  }
 
   get isCurrentUser() {
     return this.currentUser?.id === this.model.id;
   }
 
-  @discourseComputed
-  hasOAuth() {
+  @computed
+  get hasOAuth() {
     return findAll().length > 0;
   }
 
-  @discourseComputed
-  displayOAuthWarning() {
+  @computed
+  get displayOAuthWarning() {
     return (
       this.hasOAuth && this.siteSettings.enforce_second_factor_on_external_auth
     );
   }
 
-  @discourseComputed("currentUser")
-  showEnforcedWithOAuthNotice(user) {
+  @computed("currentUser")
+  get showEnforcedWithOAuthNotice() {
     return (
-      user &&
-      user.enforcedSecondFactor &&
+      this.currentUser &&
+      this.currentUser.enforcedSecondFactor &&
       this.hasOAuth &&
       !this.siteSettings.enforce_second_factor_on_external_auth
     );
   }
 
-  @discourseComputed("currentUser")
-  showEnforcedNotice(user) {
+  @computed("currentUser")
+  get showEnforcedNotice() {
     return (
-      user &&
-      user.enforcedSecondFactor &&
+      this.currentUser &&
+      this.currentUser.enforcedSecondFactor &&
       this.siteSettings.enforce_second_factor_on_external_auth
     );
   }
 
-  @discourseComputed("totps", "security_keys")
-  hasSecondFactors(totps, security_keys) {
-    return totps.length > 0 || security_keys.length > 0;
+  @computed("totps", "security_keys")
+  get hasSecondFactors() {
+    return this.totps.length > 0 || this.security_keys.length > 0;
   }
 
   async createToTpModal() {
@@ -240,7 +246,7 @@ export default class SecondFactorController extends Controller {
     this.dialog.deleteConfirm({
       title: i18n("user.second_factor.delete_single_confirm_title"),
       message: i18n("user.second_factor.delete_single_confirm_message", {
-        name: secondFactorMethod.name,
+        name: escapeExpression(secondFactorMethod.name),
       }),
       confirmButtonLabel: "user.second_factor.delete",
       confirmButtonIcon: "ban",

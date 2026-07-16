@@ -5,6 +5,21 @@
 # https://translate.discourse.org/
 
 sq:
+  admin_js:
+    admin:
+      dashboard:
+        sections:
+          support:
+            filter:
+              all_categories: "Të gjitha kategoritë"
+            answerers:
+              staff: "Stafi"
+              member: "Anëtarë"
+              basic: "Anëtar i Thjeshtë"
+            response_time:
+              buckets:
+                lt_1h: "< 1 orë"
+                gt_24h: "> 24 orë"
   js:
     notifications:
       alt:
@@ -14,6 +29,11 @@ sq:
       accepted_answer_post_number: "postimi %{post_number}"
       topic_status_filter:
         all: "të gjitha"
+      move_post_cancel: "Anulo"
+      confirm_solved_removal_confirm: "Konfirmoni"
+      confirm_solved_removal_cancel: "Anulo"
+      shared_issue:
+        label_with_count: "%{label} (%{count})"
     discourse_automation:
       triggerables:
         first_accepted_solution:

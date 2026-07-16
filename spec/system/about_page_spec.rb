@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-describe "About page", type: :system do
+describe "About page" do
   fab!(:image_upload)
   fab!(:admin) { Fabricate(:admin, last_seen_at: 1.hour.ago) }
   fab!(:moderator) { Fabricate(:moderator, last_seen_at: 1.hour.ago) }
@@ -455,7 +455,7 @@ describe "About page", type: :system do
 
       about_page.edit_link.click
 
-      expect(current_url).to end_with("/admin/config/about")
+      expect(page).to have_current_path("/admin/config/about")
     end
 
     it "doesn't appear for moderators" do

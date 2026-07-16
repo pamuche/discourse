@@ -4,11 +4,8 @@ export default [
   ...DiscourseRecommended,
   {
     rules: {
-      "qunit/no-assert-equal": "error",
-      "qunit/no-loose-assertions": "error",
-      "ember/no-classic-components": "error",
-      "discourse/no-route-template": "error",
-      "discourse/moved-packages-import-paths": "error",
+      "ember/template-no-capital-arguments": "off",
+      "ember/template-require-button-type": "off",
     },
   },
   {
@@ -17,19 +14,30 @@ export default [
       "plugins/discourse-math/public",
       "public/",
       "vendor/",
-      "frontend/discourse/tests/fixtures",
       "**/node_modules/",
       "spec/",
       "frontend/discourse/dist/",
+      "**/*.d.ts",
+      "frontend/discourse-types/external-types",
+      "frontend/discourse-types/dts-generator.{js,ts}",
       "tmp/",
     ],
   },
   {
-    files: ["themes/**/*.{js,gjs}"],
+    files: ["themes/**/*.{js,gjs,ts,gts}"],
     languageOptions: {
       globals: {
         settings: "readonly",
         themePrefix: "readonly",
+      },
+    },
+  },
+  {
+    languageOptions: {
+      parserOptions: {
+        babelOptions: {
+          configFile: false,
+        },
       },
     },
   },

@@ -1,4 +1,8 @@
+/* eslint-disable ember/no-jquery */
 import $ from "jquery";
+import { registerAdminDashboardReportRenderer } from "discourse/admin/lib/admin-dashboard-report-renderers";
+import { registerAdminDashboardSection } from "discourse/admin/lib/admin-dashboard-sections";
+import { _renderBlocks } from "discourse/blocks/block-outlet";
 import { addAboutPageActivity } from "discourse/components/about-page";
 import { addBulkDropdownButton } from "discourse/components/bulk-select-topics-dropdown";
 import { addCardClickListenerSelector } from "discourse/components/card-contents-base";
@@ -9,11 +13,6 @@ import {
   addComposerUploadPreProcessor,
 } from "discourse/components/composer-editor";
 import { addPluginDocumentTitleCounter } from "discourse/components/d-document";
-import { addToolbarCallback } from "discourse/components/d-editor";
-import {
-  NON_STREAM_HTML_DECORATOR,
-  registerHtmlDecorator,
-} from "discourse/components/decorated-html";
 import { forceDropdownForMenuPanels as glimmerForceDropdownForMenuPanels } from "discourse/components/glimmer-site-header";
 import { addGlobalNotice } from "discourse/components/global-notice";
 import { headerButtonsDAG } from "discourse/components/header";
@@ -25,7 +24,7 @@ import { addGroupPostSmallActionCode } from "discourse/components/post/small-act
 import {
   addPluginReviewableParam,
   registerReviewableActionModal,
-} from "discourse/components/reviewable-item";
+} from "discourse/components/reviewable/item";
 import { addAdvancedSearchOptions } from "discourse/components/search-advanced-options";
 import { addSearchSuggestion } from "discourse/components/search-menu/results/assistant";
 import { addItemSelectCallback as addSearchMenuAssistantSelectCallback } from "discourse/components/search-menu/results/assistant-item";
@@ -44,16 +43,19 @@ import { registerFullPageSearchType } from "discourse/controllers/full-page-sear
 import { registerCustomPostMessageCallback as registerCustomPostMessageCallback1 } from "discourse/controllers/topic";
 import { addBeforeLoadMoreCallback as addBeforeLoadMoreNotificationsCallback } from "discourse/controllers/user-notifications";
 import { registerCustomUserNavMessagesDropdownRow } from "discourse/controllers/user-private-messages";
-import {
-  addExtraIconRenderer,
-  replaceCategoryLinkRenderer,
-} from "discourse/helpers/category-link";
 import { addUsernameSelectorDecorator } from "discourse/helpers/decorate-username-selector";
-import { registerCustomAvatarHelper } from "discourse/helpers/user-avatar";
+import { registerReviewableStatusName } from "discourse/helpers/reviewable-status";
 import { addBeforeAuthCompleteCallback } from "discourse/instance-initializers/auth-complete";
 import { registerAdminPluginConfigNav } from "discourse/lib/admin-plugin-config-nav";
 import { registerPluginHeaderActionComponent } from "discourse/lib/admin-plugin-header-actions";
 import { registerReportModeComponent } from "discourse/lib/admin-report-additional-modes";
+import { captureCallSite } from "discourse/lib/blocks/-internals/error";
+import {
+  _registerBlock,
+  _registerBlockFactory,
+} from "discourse/lib/blocks/-internals/registry/block";
+import { _registerConditionType } from "discourse/lib/blocks/-internals/registry/condition";
+import { _registerOutlet } from "discourse/lib/blocks/-internals/registry/outlet";
 import classPrepend, {
   withPrependsRolledBack,
 } from "discourse/lib/class-prepend";
@@ -62,6 +64,7 @@ import { registerRichEditorExtension } from "discourse/lib/composer/rich-editor-
 import deprecated from "discourse/lib/deprecated";
 import { registerDesktopNotificationHandler } from "discourse/lib/desktop-notifications";
 import { downloadCalendar } from "discourse/lib/download-calendar";
+import { registeredEditCategoryTabs } from "discourse/lib/edit-category-tabs";
 import { isDevelopment, isTesting } from "discourse/lib/environment";
 import { getOwnerWithFallback } from "discourse/lib/get-owner";
 import { registerHashtagType } from "discourse/lib/hashtag-type-registry";
@@ -73,6 +76,7 @@ import {
 import { registerIconRenderer, replaceIcon } from "discourse/lib/icon-library";
 import { registerModelTransformer } from "discourse/lib/model-transformers";
 import { registerNotificationTypeRenderer } from "discourse/lib/notification-types-manager";
+import { registerOnBeforeCategoryTypesChange } from "discourse/lib/on-before-category-types-change";
 import { addGTMPageChangedCallback } from "discourse/lib/page-tracker";
 import {
   extraConnectorClass,
@@ -115,18 +119,31 @@ import Composer, {
 } from "discourse/models/composer";
 import { addNavItem } from "discourse/models/nav-item";
 import { _addTrackedPostProperty } from "discourse/models/post";
-import { registerCustomLastUnreadUrlCallback } from "discourse/models/topic";
+import {
+  _addTrackedTopicProperty,
+  registerCustomLastUnreadUrlCallback,
+} from "discourse/models/topic";
 import {
   addSaveableUserField,
   addSaveableUserOptionField,
 } from "discourse/models/user";
 import { preventCloaking } from "discourse/modifiers/post-stream-viewport-tracker";
 import { setNotificationsLimit } from "discourse/routes/user-notifications";
+import { registerComposerAction } from "discourse/select-kit/components/composer-actions";
 import { CUSTOM_USER_SEARCH_OPTIONS } from "discourse/select-kit/components/user-chooser";
 import { modifySelectKit } from "discourse/select-kit/lib/plugin-api";
 import { addComposerSaveErrorCallback } from "discourse/services/composer";
 import { disableDefaultKeyboardShortcuts } from "discourse/services/keyboard-shortcuts";
-import { warnWidgetsDecommissioned } from "discourse/widgets/widget";
+import {
+  NON_STREAM_HTML_DECORATOR,
+  registerHtmlDecorator,
+} from "discourse/ui-kit/d-decorated-html";
+import { addToolbarCallback } from "discourse/ui-kit/d-editor";
+import {
+  addExtraIconRenderer,
+  replaceCategoryLinkRenderer,
+} from "discourse/ui-kit/helpers/d-category-link";
+import { registerCustomAvatarHelper } from "discourse/ui-kit/helpers/d-user-avatar";
 import { addImageWrapperButton } from "discourse-markdown-it/features/image-controls";
 
 const blockedModifications = ["component:topic-list"];
@@ -184,7 +201,6 @@ function wrapWithErrorHandler(func, messageKey) {
 class _PluginApi {
   constructor(container) {
     this.container = container;
-    this.h = warnWidgetsDecommissioned;
   }
 
   /**
@@ -681,20 +697,6 @@ class _PluginApi {
   }
 
   /**
-   * @deprecated the widget rendering system was decommissioned
-   */
-  decorateWidget() {
-    warnWidgetsDecommissioned();
-  }
-
-  /**
-   * @deprecated the widget rendering system was decommissioned
-   */
-  attachWidgetAction() {
-    warnWidgetsDecommissioned();
-  }
-
-  /**
    * @deprecated
    *
    * This function is now an alias to `api.addTrackedPostProperties`.
@@ -735,6 +737,20 @@ class _PluginApi {
   }
 
   /**
+   * Adds tracked properties to the topic model.
+   *
+   * This method is used to mark properties as tracked for topic updates.
+   *
+   * You'll need to do this if you've added properties to a Topic and need them to be
+   * automatically updated in the UI when there are changes in the model.
+   *
+   * @param {...string} names - The names of the properties to be tracked.
+   */
+  addTrackedTopicProperties(...names) {
+    names.forEach((name) => _addTrackedTopicProperty(name));
+  }
+
+  /**
    * Decommissioned API
    **/
   addPostMenuButton() {
@@ -771,6 +787,10 @@ class _PluginApi {
   /**
    * Add a new button in the topic admin menu.
    *
+   * Optionally pass a `section` to group buttons under a labelled subheader.
+   * Adjacent buttons sharing the same `section.id` are grouped together;
+   * provide either an i18n `label` key or a pre-translated `translatedLabel`.
+   *
    * Example:
    *
    * ```
@@ -782,6 +802,7 @@ class _PluginApi {
    *     icon: 'mug-saucer',
    *     className: 'hot-coffee',
    *     label: 'coffee.title',
+   *     section: { id: 'beverages', label: 'beverages.title' },
    *   };
    * });
    * ```
@@ -846,6 +867,8 @@ class _PluginApi {
    * @returns {boolean} - Whether the button should be displayed.
    *
    * @param {Object} opts - An Object.
+   * @param {string} [opts.menu] - Target menu: 'list' for list dropdown, omit for options popup (default).
+   * @param {string} [opts.name] - Unique identifier for the option.
    * @param {string} opts.icon - The name of the FontAwesome icon to display for the button.
    * @param {string} opts.label - The I18n translation key for the button's label.
    * @param {string} opts.shortcut - The keyboard shortcut to apply, NOTE: this will unconditionally add CTRL/META key (eg: m means CTRL+m).
@@ -864,6 +887,18 @@ class _PluginApi {
    *     return composer.editingPost;
    *   }
    * });
+   *
+   * @example
+   * // Add option to list dropdown
+   * api.addComposerToolbarPopupMenuOption({
+   *   menu: 'list',
+   *   name: 'my-custom-list',
+   *   icon: 'list-check',
+   *   label: 'my_plugin.custom_list',
+   *   action: (toolbarEvent) => {
+   *     toolbarEvent.applyList("- [x] ", "list_item");
+   *   }
+   * });
    **/
   addComposerToolbarPopupMenuOption(opts) {
     addPopupMenuOption(opts);
@@ -875,7 +910,6 @@ class _PluginApi {
       {
         id: "discourse.add-toolbar-popup-menu-options-callback",
         since: "3.2",
-        dropFrom: "3.3",
       }
     );
 
@@ -883,10 +917,30 @@ class _PluginApi {
   }
 
   /**
-   * @deprecated the widget rendering system was decommissioned
+   * Register a custom item in the composer-actions dropdown (the menu next
+   * to the composer title that switches between Reply, Create Topic, etc.).
+   *
+   * @param {Object} opts
+   * @param {string} opts.id - Unique identifier for the item.
+   * @param {string} opts.label - I18n key for the item's display name.
+   * @param {string} [opts.description] - Optional I18n key for the item's description text.
+   * @param {string} [opts.icon] - Optional icon name.
+   * @param {Function} [opts.condition] - `(composerActionsComponent) => boolean`. Item is shown when this returns truthy, or when omitted.
+   * @param {Function} opts.action - `(composerModel, composerActionsComponent) => void`. Called when the user picks the item.
+   *
+   * @example
+   * api.addComposerAction({
+   *   id: "create_event",
+   *   label: "discourse_post_event.composer_actions.create_event.label",
+   *   description: "discourse_post_event.composer_actions.create_event.desc",
+   *   icon: "calendar-days",
+   *   condition: (component) =>
+   *     component.composerModel?.category?.isType("events"),
+   *   action: (composerModel) => composerModel.set("creatingEvent", true),
+   * });
    */
-  cleanupStream() {
-    warnWidgetsDecommissioned();
+  addComposerAction(opts) {
+    registerComposerAction(opts);
   }
 
   /**
@@ -986,13 +1040,6 @@ class _PluginApi {
   }
 
   /**
-   * @deprecated the widget rendering system was decommissioned
-   */
-  changeWidgetSetting() {
-    warnWidgetsDecommissioned();
-  }
-
-  /**
    * Prevents a specific post from being cloaked during scroll.
    *
    * This is useful, for example, for posts that apply customizations that hold state which
@@ -1011,38 +1058,6 @@ class _PluginApi {
    **/
   preventCloak(postId, prevent = true) {
     preventCloaking(postId, prevent);
-  }
-
-  /**
-   * @deprecated the widget rendering system was decommissioned
-   */
-  createWidget() {
-    warnWidgetsDecommissioned();
-  }
-
-  /**
-   * @deprecated the widget rendering system was decommissioned
-   */
-  reopenWidget() {
-    warnWidgetsDecommissioned();
-  }
-
-  addFlagProperty() {
-    deprecated(
-      "addFlagProperty has been removed. Use the reviewable API instead.",
-      { id: "discourse.add-flag-property" }
-    );
-  }
-
-  /**
-   * @deprecated Use `api.headerIcons` instead.
-   */
-  addHeaderPanel() {
-    // eslint-disable-next-line no-console
-    console.error(
-      consolePrefix(),
-      `api.addHeaderPanel: This API was decommissioned. Use api.headerIcons instead.`
-    );
   }
 
   /**
@@ -1376,13 +1391,6 @@ class _PluginApi {
 
   addCustomUserFieldValidationCallback(callback) {
     addCustomUserFieldValidationCallback(callback);
-  }
-
-  /**
-   * @deprecated the widget rendering system was decommissioned
-   */
-  addPostTransformCallback() {
-    warnWidgetsDecommissioned();
   }
 
   /**
@@ -2149,6 +2157,14 @@ class _PluginApi {
    * @deprecated Use `addSaveableUserOption` instead
    */
   addSaveableUserOptionField(fieldName, options = {}) {
+    deprecated(
+      "`addSaveableUserOptionField` has been renamed to `addSaveableUserOption`",
+      {
+        id: "discourse.add-saveable-user-option-field",
+        since: "2026.3",
+      }
+    );
+
     this.addSaveableUserOption(fieldName, options);
   }
 
@@ -2225,6 +2241,25 @@ class _PluginApi {
    **/
   registerReviewableActionModal(reviewableType, modalClass) {
     registerReviewableActionModal(reviewableType, modalClass);
+  }
+
+  /**
+   * Register custom status names for a reviewable type, used in the
+   * review queue status badge (e.g. "Tool approved" instead of "Flag approved").
+   *
+   * The names are i18n key suffixes looked up as `review.statuses.{name}.title`.
+   *
+   * @param {String} reviewableType - The reviewable class name (e.g. "ReviewableAiToolAction")
+   * @param {String} approvedName - Status name for approved items
+   * @param {String} rejectedName - Status name for rejected items
+   *
+   * @example
+   * ```
+   * api.registerReviewableStatusName("ReviewableAiToolAction", "approved_tool_action", "rejected_tool_action");
+   * ```
+   **/
+  registerReviewableStatusName(reviewableType, approvedName, rejectedName) {
+    registerReviewableStatusName(reviewableType, approvedName, rejectedName);
   }
 
   /**
@@ -2431,15 +2466,14 @@ class _PluginApi {
   }
 
   /**
-   * @deprecated the widget rendering system was decommissioned
-   */
-  dispatchWidgetAppEvent() {
-    warnWidgetsDecommissioned();
-  }
-
-  /**
    * Support for customizing the composer text. By providing a callback. Callbacks should
    * return `null` or `undefined` if you don't need a customization based on the current state.
+   *
+   * Supported callback keys: `actionTitle`, `saveLabel`, `saveIcon`,
+   * `titlePlaceholder`. Each callback receives the composer model and
+   * returns an i18n key (or a translated string for `actionTitle`, or an
+   * icon name for `saveIcon`). Return `null` or `undefined` to fall
+   * through to the default.
    *
    * ```
    * api.customizeComposerText({
@@ -2451,6 +2485,12 @@ class _PluginApi {
    *
    *   saveLabel(model) {
    *     return "my.custom_save_label_key";
+   *   },
+   *
+   *   titlePlaceholder(model) {
+   *     if (model.creatingEvent) {
+   *       return "my.event_title_placeholder";
+   *     }
    *   }
    * })
    *
@@ -2935,6 +2975,65 @@ class _PluginApi {
   }
 
   /**
+   * Registers a component used to render a report on the customisable
+   * Reports section of the new admin dashboard. Pair with the server-side
+   * `register_admin_dashboard_report_source` registration: the source name
+   * passed here matches the provider's `source_name`. The component
+   * receives `@item`, `@payload`, and `@filters` and is mounted inside the
+   * card's chart area; the card frame (title, label pill, X-to-remove) is
+   * owned by core.
+   *
+   * ```
+   * import MyReportCard from "discourse/plugins/my-plugin/discourse/components/my-report-card";
+   *
+   * api.registerAdminDashboardReportRenderer("my_source", MyReportCard);
+   * ```
+   *
+   * @param {string} source - The provider's source_name.
+   * @param {Component} componentClass - A Glimmer component that accepts @item, @payload, @filters.
+   */
+  registerAdminDashboardReportRenderer(source, componentClass) {
+    registerAdminDashboardReportRenderer(source, componentClass);
+  }
+
+  /**
+   * Registers a component to render a whole section in the redesigned admin
+   * dashboard (gated by the `dashboard_improvements` upcoming change). Pair it
+   * with the server-side `register_admin_dashboard_section`: the `id` here must
+   * match the one registered there, and the loader block registered there
+   * produces the `@data` this component receives.
+   *
+   * The component is rendered once for each visible section with a matching id.
+   * The render site also stamps a `--<id>` class and a `data-section-id="<id>"`
+   * attribute on it, so forward `...attributes` onto your root element (wrapping
+   * the shared `<DashboardSection>` component does this for you).
+   *
+   * The component receives these args:
+   * - `@data` {Object} — the section payload: the hash returned by the
+   *   server-side loader block passed to `register_admin_dashboard_section`.
+   * - `@startDate` {Date} — start of the selected dashboard period.
+   * - `@endDate` {Date} — end of the selected dashboard period.
+   * - `@fetchError` {boolean} — true when the dashboard sections request failed.
+   * - `@period` {string} — the selected period preset (e.g. "monthly"), or
+   *   "custom" for a custom range.
+   * - `@loading` {boolean} — true while the dashboard is (re)loading sections.
+   *   Provided for convenience; a section that refetches on its own (as Solved's
+   *   "support" section does) may track its own loading state instead.
+   *
+   * ```
+   * import MySection from "discourse/plugins/my-plugin/admin/components/dashboard/my-section";
+   *
+   * api.registerAdminDashboardSection("my_section", MySection);
+   * ```
+   *
+   * @param {string} id - The section id, matching the server-side registration.
+   * @param {Component} componentClass - A Glimmer component for the section.
+   */
+  registerAdminDashboardSection(id, componentClass) {
+    registerAdminDashboardSection(id, componentClass);
+  }
+
+  /**
    * Registers a new tab in the user menu. This API method expects a callback
    * that should return a class inheriting from the class (UserMenuTab) that's
    * passed to the callback. See discourse/app/lib/user-menu/tab.js for
@@ -3166,6 +3265,12 @@ class _PluginApi {
       return;
     }
 
+    if (!icon) {
+      // eslint-disable-next-line no-console
+      console.warn(consolePrefix(), "An icon must be provided!");
+      return;
+    }
+
     this.registerValueTransformer("admin-plugin-icon", ({ value, context }) => {
       return context.pluginId === pluginId ? icon : value;
     });
@@ -3312,6 +3417,243 @@ class _PluginApi {
    */
   registerCategorySaveProperty(property) {
     _addCategoryPropertyForSave(property);
+  }
+
+  /**
+   * Registers a custom tab for the category edit page.
+   *
+   * ```
+   * api.registerEditCategoryTab({
+   *   id: "chat",
+   *   name: "Chat",
+   *   component: MyChatComponent,
+   *   condition: ({ category, siteSettings }) => siteSettings.chat_enabled,
+   * });
+   * ```
+   *
+   * @param {Object} tab
+   * @param {string} tab.id - unique identifier for the tab, used in URL routing
+   * @param {string} tab.name - display name shown on the tab
+   * @param {Class} tab.component - Glimmer component to render as tab content
+   * @param {Function} [tab.condition] - optional callback returning boolean to conditionally show the tab
+   * @param {boolean} [tab.primary] - if true, tab is shown without requiring "Advanced settings" toggle
+   */
+  registerEditCategoryTab(tab) {
+    registeredEditCategoryTabs.push(tab);
+  }
+
+  /**
+   * Register a callback that runs when the user changes category type selection in the
+   * category editor's General tab.
+   *
+   * Callbacks run in order. Each may be `async`. The change applies only if every callback
+   * returns a **truthy** value; a **falsy** return blocks the new selection. If a callback
+   * throws, the error is reported and the change is blocked; in tests the error is rethrown.
+   *
+   * The callback receives:
+   * - `nextTypes` - normalized type objects after the empty-to-discussion rule
+   * - `previousTypes` - selection before this change
+   * - `category`, `form`, and optionally `transientData`
+   *
+   * @param {function(Object): (boolean|undefined|Promise<boolean|undefined>)} fn
+   */
+  registerOnBeforeCategoryTypesChange(fn) {
+    registerOnBeforeCategoryTypesChange(fn);
+  }
+
+  /**
+   * Registers block components to render in a designated outlet.
+   *
+   * **IMPORTANT:** Must be called in an initializer that runs after "freeze-block-registry".
+   * All blocks must be registered via `registerBlock()` before this is called.
+   *
+   * Block outlets are extension points where themes and plugins can render custom
+   * content layouts. Each block must be decorated with `@block` from "discourse/blocks".
+   *
+   * Blocks can have conditions that determine when they render. Conditions support
+   * AND logic (array), OR logic (`any`), and NOT logic (`not`).
+   *
+   * @experimental This API is under active development and may change or be removed
+   * in future releases without prior notice. Use with caution in production environments.
+   *
+   * @param {string} outletName - The block outlet identifier
+   * @param {Array<import("discourse/blocks/block-outlet").LayoutEntry>} blocks - Array of layout entries
+   *
+   * @example
+   * ```javascript
+   * import { block } from "discourse/blocks";
+   *
+   * @block("my-banner")
+   * class MyBanner extends Component {
+   *   <template>
+   *     <h1>{{@title}}</h1>
+   *   </template>
+   * }
+   *
+   * api.renderBlocks("homepage-blocks", [
+   *   // Simple block without conditions
+   *   {
+   *     block: MyBanner,
+   *     args: { title: "Welcome!" },
+   *   },
+   *   // Block with conditions (AND logic - all must pass)
+   *   {
+   *     block: MyBanner,
+   *     args: { title: "Admin Banner" },
+   *     conditions: [
+   *       { type: "route", pages: ["DISCOVERY_PAGES"] },
+   *       { type: "user", admin: true }
+   *     ],
+   *   },
+   *   // Block with OR conditions
+   *   {
+   *     block: MyBanner,
+   *     args: { title: "Staff Banner" },
+   *     conditions: [
+   *       { any: [
+   *         { type: "user", admin: true },
+   *         { type: "user", moderator: true }
+   *       ]}
+   *     ],
+   *   },
+   * ]);
+   * ```
+   */
+  renderBlocks(outletName, blocks) {
+    // Capture call site here, excluding this method, so the stack trace
+    // points directly to the user's code that called api.renderBlocks().
+    const callSiteError = captureCallSite(this.renderBlocks);
+    _renderBlocks(outletName, blocks, this.container, callSiteError);
+  }
+
+  /**
+   * Registers a block component for use with `renderBlocks()`.
+   *
+   * **IMPORTANT:** Must be called in a pre-initializer that runs before "freeze-block-registry".
+   * The block registry is frozen by the "freeze-block-registry" initializer, preventing
+   * late registrations.
+   *
+   * Supports two registration patterns:
+   *
+   * 1. **Direct class registration**: `registerBlock(BlockClass)`
+   *    Registers using the block's own `blockName` from its `@block` decorator.
+   *
+   * 2. **Lazy loading with factory**: `registerBlock("name", () => import(...))`
+   *    Registers a factory function for lazy loading. The block module won't be
+   *    loaded until actually needed. The resolved block's `blockName` must match
+   *    the registered name.
+   *
+   * @experimental This API is under active development and may change or be removed
+   * in future releases without prior notice. Use with caution in production environments.
+   *
+   * @param {typeof import("@glimmer/component").default | string} blockOrName - Block class or name string for lazy loading.
+   * @param {Function} [factory] - Factory function returning Promise<BlockClass> (required when first arg is name).
+   *
+   * @example Direct class registration
+   * ```javascript
+   * import HeroBanner from "../blocks/hero-banner";
+   * api.registerBlock(HeroBanner);
+   * ```
+   *
+   * @example Lazy loading with factory
+   * ```javascript
+   * api.registerBlock("sidebar-widget", () => import("../blocks/sidebar-widget"));
+   * ```
+   */
+  registerBlock(blockOrName, factory) {
+    if (typeof blockOrName === "string") {
+      // Lazy loading: registerBlock("name", () => import(...))
+      if (typeof factory !== "function") {
+        throw new Error(
+          `registerBlock("${blockOrName}", ...) requires a factory function as second argument.`
+        );
+      }
+      _registerBlockFactory(blockOrName, factory);
+    } else {
+      // Direct class: registerBlock(BlockClass)
+      _registerBlock(blockOrName);
+    }
+  }
+
+  /**
+   * Registers a custom block outlet where blocks can be rendered.
+   *
+   * This allows plugins and themes to define their own block outlets that can be
+   * used with `renderBlocks()`. Custom outlets must follow naming conventions:
+   * - Core outlets: `outlet-name` (kebab-case)
+   * - Plugin outlets: `namespace:outlet-name` (e.g., `chat:message-actions`)
+   * - Theme outlets: `theme:namespace:outlet-name` (e.g., `theme:my-theme:hero`)
+   *
+   * **IMPORTANT:** Must be called in a pre-initializer before "freeze-block-registry".
+   *
+   * @experimental This API is under active development and may change or be removed
+   * in future releases without prior notice. Use with caution in production environments.
+   *
+   * @param {string} outletName - The outlet name (must follow naming conventions).
+   * @param {Object} [options] - Outlet configuration options.
+   * @param {string} [options.description] - Human-readable description of the outlet.
+   *
+   * @example
+   * ```javascript
+   * // In a pre-initializer
+   * api.registerBlockOutlet("chat:message-actions", {
+   *   description: "Actions displayed below chat messages",
+   * });
+   *
+   * // Later, in an api-initializer
+   * api.renderBlocks("chat:message-actions", [...]);
+   * ```
+   */
+  registerBlockOutlet(outletName, options) {
+    _registerOutlet(outletName, options);
+  }
+
+  /**
+   * Registers a custom block condition type.
+   *
+   * Custom conditions must use the `@blockCondition` decorator from "discourse/blocks/conditions"
+   * and extend `BlockCondition`. The class must implement the `evaluate(args)` method.
+   *
+   * **Note: The `evaluate()` method MUST be pure and idempotent.** It may be called
+   * multiple times during a single render cycle, especially when debug logging
+   * is enabled, and should not perform any side effects or state mutations.
+   *
+   * @experimental This API is under active development and may change or be removed
+   * in future releases without prior notice. Use with caution in production environments.
+   *
+   * @param {typeof import("discourse/blocks/conditions").BlockCondition} ConditionClass - The condition class decorated with `@blockCondition`.
+   *
+   * @example
+   * ```javascript
+   * import { blockCondition, BlockCondition } from "discourse/blocks/conditions";
+   *
+   * @blockCondition({
+   *   type: "feature-flag",
+   *   args: {
+   *     flag: { type: "string", required: true },
+   *   },
+   * })
+   * class BlockFeatureFlagCondition extends BlockCondition {
+   *   @service currentUser;
+   *
+   *   evaluate(args) {
+   *     return this.currentUser?.feature_flags?.[args.flag] === true;
+   *   }
+   * }
+   *
+   * api.registerBlockConditionType(BlockFeatureFlagCondition);
+   *
+   * // Then use it in renderBlocks:
+   * api.renderBlocks("homepage-blocks", [
+   *   {
+   *     block: MyBlock,
+   *     conditions: [{ type: "feature-flag", flag: "new_feature" }]
+   *   }
+   * ]);
+   * ```
+   */
+  registerBlockConditionType(ConditionClass) {
+    _registerConditionType(ConditionClass);
   }
 
   // eslint-disable-next-line no-unused-vars

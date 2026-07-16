@@ -2,7 +2,6 @@ import Component from "@glimmer/component";
 import { cached } from "@glimmer/tracking";
 import { classify } from "@ember/string";
 import getURL from "discourse/lib/get-url";
-import { escapeExpression } from "discourse/lib/utilities";
 import TextViewComponent from "./result-types/text";
 
 export default class QueryRowContent extends Component {
@@ -26,7 +25,7 @@ export default class QueryRowContent extends Component {
       } else if (componentDefinition.name === "text") {
         return {
           component: TextViewComponent,
-          textValue: escapeExpression(this.args.row[idx].toString()),
+          textValue: this.args.row[idx].toString(),
         };
       }
 
@@ -54,9 +53,9 @@ export default class QueryRowContent extends Component {
   }
 
   <template>
-    <tr>
+    <tr class="query-result-row">
       {{#each this.results as |result|}}
-        <td>
+        <td class="query-result-cell">
           <result.component
             @ctx={{result.ctx}}
             @params={{result.params}}
